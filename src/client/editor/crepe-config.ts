@@ -2,6 +2,7 @@ import {
   CrepeFeature,
   type CrepeConfig,
 } from '@milkdown/crepe';
+import { languages } from '@codemirror/language-data';
 
 interface BuildCrepeOptionsInput {
   root: Node;
@@ -31,6 +32,19 @@ export function buildCrepeOptions(
       [CrepeFeature.AI]: false,
     },
     featureConfigs: {
+      [CrepeFeature.CodeMirror]: {
+        languages,
+        searchPlaceholder: '搜索语言',
+        noResultText: '没有结果',
+        copyText: '复制',
+        renderLanguage: (language: string) => language || 'Text',
+      },
+      [CrepeFeature.Toolbar]: {
+        buildToolbar: (builder) => {
+          const group = builder.addGroup('block-tools', '块工具');
+          group.addItem('block-format', dropdownItem('格式', '正文'));
+        },
+      },
       [CrepeFeature.ImageBlock]: {
         onUpload: input.uploadImage,
         proxyDomURL: input.proxyImageUrl,
@@ -77,3 +91,10 @@ export function buildCrepeOptions(
   };
 }
 
+function dropdownItem(label: string, icon: string) {
+  return {
+    icon: `<span class="toolbar-text-icon toolbar-dropdown-label" data-toolbar-current="${label}">${icon}</span><span class="toolbar-dropdown-caret">⌄</span>`,
+    active: () => false,
+    onRun: undefined,
+  };
+}

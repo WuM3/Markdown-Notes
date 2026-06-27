@@ -1,8 +1,10 @@
 import {
   useEffect,
+  useMemo,
   useRef,
   useState,
   type ChangeEvent,
+  type WheelEvent,
 } from 'react';
 import * as DropdownMenu from '@radix-ui/react-dropdown-menu';
 import {
@@ -11,6 +13,7 @@ import {
   FileUp,
   Highlighter,
   ImagePlus,
+  ListTree,
   LoaderCircle,
   Menu,
   Paperclip,
@@ -24,6 +27,11 @@ import {
   type MarkdownEditorHandle,
 } from './MarkdownEditor.js';
 import { assetMarkdownPath } from './asset-paths.js';
+import { DocumentOutline } from './DocumentOutline.js';
+import {
+  buildOutlineTree,
+  parseMarkdownHeadings,
+} from './document-outline.js';
 
 export interface DraftDocument {
   title: string;
@@ -45,13 +53,24 @@ export function DocumentEditor({
 }: DocumentEditorProps) {
   const [title, setTitle] = useState(document.title);
   const [status, setStatus] = useState<SaveStatus>('saved');
+  const [outlineOpen, setOutlineOpen] = useState(false);
+  const [outlineCollapsed, setOutlineCollapsed] = useState(false);
+  const [activeHeadingId, setActiveHeadingId] = useState<string>();
+  const [outlineHeadings, setOutlineHeadings] = useState(() =>
+    parseMarkdownHeadings(document.content),
+  );
   const editorRef = useRef<MarkdownEditorHandle>(null);
+  const editorScrollRef = useRef<HTMLDivElement>(null);
   const imageInputRef = useRef<HTMLInputElement>(null);
   const attachmentInputRef = useRef<HTMLInputElement>(null);
   const revisionRef = useRef(document.revision);
   const titleRef = useRef(document.title);
   const markdownRef = useRef(document.content);
   const saverRef = useRef<DebouncedSaver<DraftDocument> | undefined>(undefined);
+  const outlineTree = useMemo(
+    () => buildOutlineTree(outlineHeadings),
+    [outlineHeadings],
+  );
 
   useEffect(() => {
     const saver = new DebouncedSaver<DraftDocument>({
@@ -99,7 +118,42 @@ export function DocumentEditor({
 
   function handleMarkdownChange(markdown: string) {
     markdownRef.current = markdown;
+    setOutlineHeadings(parseMarkdownHeadings(markdown));
     scheduleSave();
+  }
+
+  function scrollToHeading(index: number) {
+    const heading = outlineHeadings[index];
+    const headingElement = editorScrollRef.current?.querySelectorAll<HTMLElement>(
+      '.ProseMirror h1, .ProseMirror h2, .ProseMirror h3, .ProseMirror h4, .ProseMirror h5',
+    )[index];
+    if (!heading || !headingElement) return;
+
+    setActiveHeadingId(heading.id);
+    headingElement.scrollIntoView({
+      block: 'start',
+      behavior: window.matchMedia('(prefers-reduced-motion: reduce)').matches
+        ? 'auto'
+        : 'smooth',
+    });
+    setOutlineOpen(false);
+  }
+
+  function handleOutlineWheel(event: WheelEvent<HTMLElement>) {
+    const scroller = editorScrollRef.current;
+    if (!scroller || Math.abs(event.deltaY) < Math.abs(event.deltaX)) return;
+
+    const maxScrollTop = scroller.scrollHeight - scroller.clientHeight;
+    if (maxScrollTop <= 0) return;
+
+    const nextScrollTop = Math.min(
+      maxScrollTop,
+      Math.max(0, scroller.scrollTop + event.deltaY),
+    );
+    if (nextScrollTop === scroller.scrollTop) return;
+
+    scroller.scrollTop = nextScrollTop;
+    event.preventDefault();
   }
 
   async function handleAsset(file: File, image: boolean) {
@@ -122,6 +176,15 @@ export function DocumentEditor({
           onClick={onOpenSidebar}
         >
           <Menu size={20} />
+        </button>
+        <button
+          type="button"
+          className="mobile-outline-button"
+          aria-label="打开文档目录"
+          data-tooltip="文档目录"
+          onClick={() => setOutlineOpen(true)}
+        >
+          <ListTree size={20} />
         </button>
         <div className="breadcrumbs">
           {document.parentPath || '根目录'}
@@ -162,22 +225,57 @@ export function DocumentEditor({
           </DropdownMenu.Portal>
         </DropdownMenu.Root>
       </header>
-      <div className="editor-scroll">
-        <div className="document-surface">
-          <input
-            className="document-title"
-            aria-label="文档标题"
-            value={title}
-            onChange={handleTitleChange}
-            placeholder="未命名文档"
-          />
-          <MarkdownEditor
-            ref={editorRef}
-            document={document}
-            onChange={handleMarkdownChange}
-          />
+      <div className="editor-body">
+        <div className="editor-scroll" ref={editorScrollRef}>
+          <div
+            className={`document-canvas ${
+              outlineCollapsed ? 'outline-collapsed' : ''
+            }`}
+          >
+            <DocumentOutline
+              collapsed={outlineCollapsed}
+              nodes={outlineTree}
+              activeId={activeHeadingId}
+              onCollapsedChange={setOutlineCollapsed}
+              onNavigate={scrollToHeading}
+              onWheel={handleOutlineWheel}
+            />
+            <div className="document-surface">
+              <input
+                className="document-title"
+                aria-label="文档标题"
+                value={title}
+                onChange={handleTitleChange}
+                placeholder="未命名文档"
+              />
+              <MarkdownEditor
+                ref={editorRef}
+                document={document}
+                onChange={handleMarkdownChange}
+              />
+            </div>
+          </div>
         </div>
       </div>
+      {outlineOpen && (
+        <div className="document-outline-drawer">
+          <button
+            type="button"
+            className="document-outline-backdrop"
+            aria-label="关闭文档目录"
+            onClick={() => setOutlineOpen(false)}
+          />
+          <div className="document-outline-sheet">
+            <DocumentOutline
+              compact
+              nodes={outlineTree}
+              activeId={activeHeadingId}
+              onClose={() => setOutlineOpen(false)}
+              onNavigate={scrollToHeading}
+            />
+          </div>
+        </div>
+      )}
       <div className="mobile-editor-toolbar">
         <button type="button" onClick={() => imageInputRef.current?.click()}>
           <ImagePlus size={19} />

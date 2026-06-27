@@ -1,49 +1,9 @@
 import { useEffect, useLayoutEffect, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
-
-interface RectLike {
-  left: number;
-  top: number;
-  width: number;
-  height: number;
-}
-
-interface SizeLike {
-  width: number;
-  height: number;
-}
-
-interface ViewportLike {
-  width: number;
-  height: number;
-}
-
-interface TooltipPosition {
-  left: number;
-  top: number;
-  placement: 'top' | 'bottom';
-}
-
-export function computeTooltipPosition(
-  target: RectLike,
-  tooltip: SizeLike,
-  viewport: ViewportLike,
-): TooltipPosition {
-  const gap = 8;
-  const edge = 8;
-  const placement = target.top >= tooltip.height + gap + edge ? 'top' : 'bottom';
-  const preferredLeft = target.left + target.width / 2 - tooltip.width / 2;
-  const left = Math.min(
-    Math.max(edge, preferredLeft),
-    Math.max(edge, viewport.width - tooltip.width - edge),
-  );
-  const top =
-    placement === 'top'
-      ? target.top - tooltip.height - gap
-      : Math.min(viewport.height - tooltip.height - edge, target.top + target.height + gap);
-
-  return { left, top, placement };
-}
+import {
+  computeTooltipPosition,
+  type TooltipPosition,
+} from './tooltip-position.js';
 
 export function GlobalTooltip() {
   const [target, setTarget] = useState<HTMLElement | null>(null);
@@ -54,7 +14,7 @@ export function GlobalTooltip() {
     placement: 'top',
   });
   const tooltipRef = useRef<HTMLDivElement>(null);
-  const timerRef = useRef<ReturnType<typeof setTimeout>>();
+  const timerRef = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
 
   useEffect(() => {
     const showFor = (candidate: EventTarget | null) => {
@@ -151,4 +111,3 @@ export function GlobalTooltip() {
     document.body,
   );
 }
-

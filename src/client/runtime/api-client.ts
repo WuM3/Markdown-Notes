@@ -33,11 +33,11 @@ export interface ApiClientOptions {
 }
 
 export class ApiClient {
-  private readonly fetcher: typeof fetch;
+  private readonly fetcher?: typeof fetch;
   private readonly baseUrl: string;
 
   constructor(private readonly options: ApiClientOptions) {
-    this.fetcher = options.fetcher ?? fetch;
+    this.fetcher = options.fetcher;
     this.baseUrl = (options.baseUrl ?? '').replace(/\/+$/g, '');
   }
 
@@ -58,7 +58,10 @@ export class ApiClient {
   }
 
   async request<T>(path: string, init?: RequestInit): Promise<T> {
-    const response = await this.fetcher(this.apiUrl(path), init);
+    const response = await (this.fetcher ?? globalThis.fetch)(
+      this.apiUrl(path),
+      init,
+    );
     const contentType = response.headers.get('content-type') ?? '';
     const body = contentType.includes('application/json')
       ? await response.json()
@@ -135,4 +138,3 @@ function jsonRequest(method: string, body: unknown): RequestInit {
 }
 
 export const webApiClient = new ApiClient({ target: 'web' });
-

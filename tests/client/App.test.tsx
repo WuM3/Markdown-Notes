@@ -1,7 +1,14 @@
 // @vitest-environment jsdom
 
-import React from 'react';
-import { render, screen, waitFor } from '@testing-library/react';
+import React, { createRef } from 'react';
+import {
+  act,
+  cleanup,
+  render,
+  screen,
+  waitFor,
+  within,
+} from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 
@@ -13,7 +20,7 @@ vi.mock('../../src/client/editor/MarkdownEditor.js', () => ({
   }) => React.createElement('div', { 'data-testid': 'markdown-editor' }, document.content),
 }));
 
-import { App } from '../../src/client/App.js';
+import { App, type AppHandle } from '../../src/client/App.js';
 
 const documentRecord = {
   id: 'doc-1',
@@ -28,6 +35,7 @@ const documentRecord = {
 
 describe('App', () => {
   afterEach(() => {
+    cleanup();
     vi.restoreAllMocks();
   });
 
@@ -87,10 +95,14 @@ describe('App', () => {
       'data-tooltip',
       '导出全部笔记',
     );
+    expect(screen.getByRole('button', { name: '收起文件夹目录' })).toHaveAttribute(
+      'data-tooltip',
+      '收起文件夹目录',
+    );
 
     const treePanel = screen.getByRole('region', { name: '笔记目录' });
     expect(
-      await treePanel.findByRole('button', { name: '新建文档' }),
+      await within(treePanel).findByRole('button', { name: '新建文档' }),
     ).toHaveAttribute('data-tooltip', '新建文档');
     expect(screen.getByRole('button', { name: '新建目录' })).toHaveAttribute(
       'data-tooltip',
@@ -104,16 +116,46 @@ describe('App', () => {
     await userEvent.click(screen.getByText('实验记录'));
     expect(await screen.findByLabelText('文档标题')).toHaveValue('实验记录');
     expect(screen.getByTestId('markdown-editor')).toHaveTextContent('第一轮实验');
+    expect(screen.getByRole('navigation', { name: '文档目录' })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: '第一轮实验' })).toBeInTheDocument();
+    await userEvent.click(screen.getByRole('button', { name: '收起文档目录' }));
+    expect(screen.queryByRole('button', { name: '第一轮实验' })).not.toBeInTheDocument();
+    await userEvent.click(screen.getByRole('button', { name: '展开文档目录' }));
+    expect(screen.getByRole('button', { name: '第一轮实验' })).toBeInTheDocument();
     expect(screen.getByRole('button', { name: '打开目录' })).toHaveAttribute(
       'data-tooltip',
       '打开目录',
     );
+
+    await userEvent.click(screen.getByRole('button', { name: '收起文件夹目录' }));
+    expect(screen.getByTestId('app-shell')).toHaveClass('tree-collapsed');
+    expect(screen.getByRole('button', { name: '展开文件夹目录' })).toHaveAttribute(
+      'data-tooltip',
+      '展开文件夹目录',
+    );
+    await userEvent.click(screen.getByRole('button', { name: '展开文件夹目录' }));
+    expect(screen.getByTestId('app-shell')).not.toHaveClass('tree-collapsed');
 
     await userEvent.click(screen.getByRole('button', { name: '搜索' }));
     await userEvent.type(screen.getByPlaceholderText('搜索标题和正文'), '卷积');
     await waitFor(() =>
       expect(screen.getByText('记录卷积网络结果')).toBeInTheDocument(),
     );
+  });
+
+  it('lets the native back handler return from search to notes', async () => {
+    vi.spyOn(globalThis, 'fetch').mockResolvedValue(jsonResponse([]));
+    const ref = createRef<AppHandle>();
+
+    render(<App ref={ref} />);
+    await screen.findByText('选择一篇笔记开始编辑');
+    await userEvent.click(screen.getByRole('button', { name: '搜索' }));
+
+    expect(ref.current?.handleBack()).toBe(true);
+    await act(async () => {});
+
+    expect(screen.getByRole('button', { name: '笔记' })).toHaveClass('active');
+    expect(ref.current?.handleBack()).toBe(false);
   });
 });
 

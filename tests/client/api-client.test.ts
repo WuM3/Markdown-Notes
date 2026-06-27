@@ -36,10 +36,10 @@ describe('ApiClient', () => {
       ),
     });
 
-    await expect(client.request('/documents/doc-1')).rejects.toMatchObject<ApiError>({
+    await expect(client.request('/documents/doc-1')).rejects.toMatchObject({
       status: 409,
       body: { code: 'REVISION_CONFLICT', current: { revision: 'new' } },
-    });
+    } satisfies Partial<ApiError>);
   });
 
   it('reads the current global fetch implementation at request time', async () => {

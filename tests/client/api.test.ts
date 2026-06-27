@@ -1,8 +1,14 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
-import { apiRequest } from '../../src/client/api.js';
+import {
+  apiRequest,
+  configureNotesApi,
+  resetNotesApi,
+} from '../../src/client/api.js';
+import { ApiClient } from '../../src/client/runtime/api-client.js';
 
 describe('apiRequest', () => {
   afterEach(() => {
+    resetNotesApi();
     vi.restoreAllMocks();
   });
 
@@ -40,5 +46,28 @@ describe('apiRequest', () => {
         current: { revision: 'new-revision' },
       },
     });
+  });
+
+  it('routes every request through the configured Android server', async () => {
+    const fetcher = vi.fn().mockResolvedValue(
+      new Response(JSON.stringify({ status: 'ok', version: '0.1.0' }), {
+        status: 200,
+        headers: { 'content-type': 'application/json' },
+      }),
+    );
+    configureNotesApi(
+      new ApiClient({
+        target: 'android',
+        baseUrl: 'http://192.168.1.8:3210',
+        fetcher,
+      }),
+    );
+
+    await apiRequest('/api/health');
+
+    expect(fetcher).toHaveBeenCalledWith(
+      'http://192.168.1.8:3210/api/health',
+      undefined,
+    );
   });
 });

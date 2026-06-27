@@ -12,6 +12,7 @@ import { CSS } from '@dnd-kit/utilities';
 import * as DropdownMenu from '@radix-ui/react-dropdown-menu';
 import {
   ChevronDown,
+  ChevronLeft,
   ChevronRight,
   FilePlus2,
   FileText,
@@ -26,6 +27,8 @@ import type { TreeNode } from '../../shared/types.js';
 interface TreePanelProps {
   tree: TreeNode[];
   selectedId?: string;
+  collapsed?: boolean;
+  onCollapsedChange: (collapsed: boolean) => void;
   onOpen: (id: string) => void;
   onCreateDocument: (parentPath: string) => void;
   onCreateFolder: (parentPath: string) => void;
@@ -37,6 +40,8 @@ interface TreePanelProps {
 export function TreePanel({
   tree,
   selectedId,
+  collapsed = false,
+  onCollapsedChange,
   onOpen,
   onCreateDocument,
   onCreateFolder,
@@ -55,55 +60,81 @@ export function TreePanel({
     await onMove(node, targetParentPath);
   }
 
+  if (collapsed) {
+    return (
+      <section className="tree-panel collapsed" aria-label="笔记目录">
+        <button
+          type="button"
+          className="tree-panel-expand"
+          aria-label="展开文件夹目录"
+          data-tooltip="展开文件夹目录"
+          onClick={() => onCollapsedChange(false)}
+        >
+          <ChevronRight size={18} />
+        </button>
+      </section>
+    );
+  }
+
   return (
     <section className="tree-panel" aria-label="笔记目录">
-      <header className="tree-header">
-        <div>
-          <strong>我的笔记</strong>
-          <span>Markdown 文档</span>
-        </div>
-        <div className="tree-header-actions">
-          <button
-            type="button"
-            title="新建文档"
-            aria-label="新建文档"
-            data-tooltip="新建文档"
-            onClick={() => onCreateDocument('')}
-          >
-            <FilePlus2 size={17} />
-          </button>
-          <button
-            type="button"
-            title="新建目录"
-            aria-label="新建目录"
-            data-tooltip="新建目录"
-            onClick={() => onCreateFolder('')}
-          >
-            <FolderPlus size={17} />
-          </button>
-        </div>
-      </header>
-      <DndContext sensors={sensors} onDragEnd={(event) => void handleDragEnd(event)}>
-        <RootDropZone>
-          {tree.length === 0 ? (
-            <div className="tree-empty">新建一个目录或文档开始记录</div>
-          ) : (
-            tree.map((node) => (
-              <TreeItem
-                key={node.id}
-                node={node}
-                depth={0}
-                selectedId={selectedId}
-                onOpen={onOpen}
-                onCreateDocument={onCreateDocument}
-                onCreateFolder={onCreateFolder}
-                onRename={onRename}
-                onDelete={onDelete}
-              />
-            ))
-          )}
-        </RootDropZone>
-      </DndContext>
+      <div className="tree-panel-content">
+        <header className="tree-header">
+          <div>
+            <strong>我的笔记</strong>
+            <span>Markdown 文档</span>
+          </div>
+          <div className="tree-header-actions">
+            <button
+              type="button"
+              aria-label="收起文件夹目录"
+              data-tooltip="收起文件夹目录"
+              onClick={() => onCollapsedChange(true)}
+            >
+              <ChevronLeft size={17} />
+            </button>
+            <button
+              type="button"
+              title="新建文档"
+              aria-label="新建文档"
+              data-tooltip="新建文档"
+              onClick={() => onCreateDocument('')}
+            >
+              <FilePlus2 size={17} />
+            </button>
+            <button
+              type="button"
+              title="新建目录"
+              aria-label="新建目录"
+              data-tooltip="新建目录"
+              onClick={() => onCreateFolder('')}
+            >
+              <FolderPlus size={17} />
+            </button>
+          </div>
+        </header>
+        <DndContext sensors={sensors} onDragEnd={(event) => void handleDragEnd(event)}>
+          <RootDropZone>
+            {tree.length === 0 ? (
+              <div className="tree-empty">新建一个目录或文档开始记录</div>
+            ) : (
+              tree.map((node) => (
+                <TreeItem
+                  key={node.id}
+                  node={node}
+                  depth={0}
+                  selectedId={selectedId}
+                  onOpen={onOpen}
+                  onCreateDocument={onCreateDocument}
+                  onCreateFolder={onCreateFolder}
+                  onRename={onRename}
+                  onDelete={onDelete}
+                />
+              ))
+            )}
+          </RootDropZone>
+        </DndContext>
+      </div>
     </section>
   );
 }

@@ -36,6 +36,42 @@ describe('buildCrepeOptions', () => {
         math: null,
       },
     });
+
+    const codeMirror = options.featureConfigs?.[CrepeFeature.CodeMirror] as {
+      languages?: Array<{ name: string }>;
+    };
+    expect(codeMirror.languages?.some((language) => language.name === 'C')).toBe(
+      true,
+    );
+    expect(
+      codeMirror.languages?.some((language) => language.name === 'TypeScript'),
+    ).toBe(true);
+
+    const groups: Array<{ key: string; items: Array<{ key: string }> }> = [];
+    const toolbar = options.featureConfigs?.[CrepeFeature.Toolbar] as {
+      buildToolbar?: (builder: {
+        addGroup: (key: string, label: string) => {
+          addItem: (key: string, item: unknown) => unknown;
+        };
+      }) => void;
+    };
+    toolbar.buildToolbar?.({
+      addGroup(key) {
+        const group = { key, items: [] as Array<{ key: string }> };
+        groups.push(group);
+        return {
+          addItem(itemKey) {
+            group.items.push({ key: itemKey });
+            return this;
+          },
+        };
+      },
+    });
+    expect(groups).toContainEqual({
+      key: 'block-tools',
+      items: [
+        { key: 'block-format' },
+      ],
+    });
   });
 });
-

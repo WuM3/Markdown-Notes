@@ -2,7 +2,7 @@ import { mkdtemp, readFile, rm, writeFile } from 'node:fs/promises';
 import os from 'node:os';
 import path from 'node:path';
 import type { FastifyInstance } from 'fastify';
-import { afterEach, beforeEach, describe, expect, it } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { buildApp } from '../../src/server/app.js';
 import { parseMarkdownFile, serializeMarkdownFile } from '../../src/server/domain/markdown.js';
 
@@ -18,6 +18,7 @@ describe('Fastify API', () => {
   afterEach(async () => {
     await app.close();
     await rm(dataDir, { recursive: true, force: true });
+    vi.unstubAllGlobals();
   });
 
   it('creates folders and documents, then returns them in the tree', async () => {
@@ -183,6 +184,49 @@ describe('Fastify API', () => {
     expect(exported.statusCode).toBe(200);
     expect(exported.headers['content-type']).toContain('application/zip');
     expect(exported.rawPayload.subarray(0, 2).toString()).toBe('PK');
+  });
+
+  it('imports remote Markdown images into local assets while saving', async () => {
+    const created = (
+      await app.inject({
+        method: 'POST',
+        url: '/api/documents',
+        payload: { parentPath: '', title: '远程图片' },
+      })
+    ).json();
+    const imageBytes = Buffer.from('remote image bytes');
+    const fetch = vi.fn(async () =>
+      new Response(imageBytes, {
+        headers: { 'content-type': 'image/png' },
+      }),
+    );
+    vi.stubGlobal('fetch', fetch);
+
+    const saved = await app.inject({
+      method: 'PUT',
+      url: `/api/documents/${created.id}`,
+      payload: {
+        title: created.title,
+        content: '![拓扑图](https://pim0gypv9pk.feishu.cn/space/api/box/stream/download/diagram.png?token=soon-expired)',
+        revision: created.revision,
+      },
+    });
+
+    expect(saved.statusCode).toBe(200);
+    expect(fetch).toHaveBeenCalledWith(
+      'https://pim0gypv9pk.feishu.cn/space/api/box/stream/download/diagram.png?token=soon-expired',
+    );
+    const document = saved.json();
+    expect(document.content).toContain(`![拓扑图](.assets/${created.id}/diagram.png)`);
+    expect(document.content).not.toContain('pim0gypv9pk.feishu.cn');
+
+    const asset = await app.inject({
+      method: 'GET',
+      url: `/api/assets/${created.id}/diagram.png`,
+    });
+    expect(asset.statusCode).toBe(200);
+    expect(asset.rawPayload).toEqual(imageBytes);
+    expect(asset.headers['content-type']).toBe('image/png');
   });
 
   it('lists, restores, and permanently removes trash entries', async () => {

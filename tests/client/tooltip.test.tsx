@@ -4,8 +4,8 @@ import { act, cleanup, fireEvent, render, screen } from '@testing-library/react'
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import {
   GlobalTooltip,
-  computeTooltipPosition,
 } from '../../src/client/components/GlobalTooltip.js';
+import { computeTooltipPosition } from '../../src/client/components/tooltip-position.js';
 import {
   CREPE_TOOLBAR_LABELS,
   annotateCrepeToolbar,
@@ -68,9 +68,9 @@ describe('GlobalTooltip', () => {
 });
 
 describe('Milkdown toolbar tooltip annotations', () => {
-  it('labels the five built-in formatting buttons in order', () => {
+  it('labels built-in formatting and Feishu-style block tool buttons in order', () => {
     const root = document.createElement('div');
-    root.innerHTML = `<div class="milkdown-toolbar">${'<button class="toolbar-item"></button>'.repeat(5)}</div>`;
+    root.innerHTML = `<div class="milkdown-toolbar">${'<button class="toolbar-item"></button>'.repeat(6)}</div>`;
 
     annotateCrepeToolbar(root);
 

@@ -10,7 +10,10 @@ import type { DocumentRecord } from '../../shared/types.js';
 import { notesApi } from '../api.js';
 import { assetMarkdownPath, assetPreviewUrl } from './asset-paths.js';
 import { buildCrepeOptions } from './crepe-config.js';
+import { withInferredCodeBlockLanguages } from './code-block-language.js';
+import { configureCodePaste } from './code-paste.js';
 import { observeCrepeToolbar } from './toolbar-tooltips.js';
+import { applyBlockFormat } from './toolbar-commands.js';
 
 export interface MarkdownEditorHandle {
   appendMarkdown: (markdown: string) => void;
@@ -29,7 +32,14 @@ export const MarkdownEditor = forwardRef<
   const rootRef = useRef<HTMLDivElement>(null);
   const crepeRef = useRef<Crepe | undefined>(undefined);
   const onChangeRef = useRef(onChange);
+  const documentIdRef = useRef(document.id);
+  const initialContentRef = useRef(document.content);
   onChangeRef.current = onChange;
+
+  if (documentIdRef.current !== document.id) {
+    documentIdRef.current = document.id;
+    initialContentRef.current = document.content;
+  }
 
   useImperativeHandle(
     ref,
@@ -51,12 +61,10 @@ export const MarkdownEditor = forwardRef<
   useEffect(() => {
     const root = rootRef.current;
     if (!root) return;
-    const stopObservingToolbar = observeCrepeToolbar(root);
-
     const crepe = new Crepe(
       buildCrepeOptions({
         root,
-        defaultValue: document.content,
+        defaultValue: initialContentRef.current,
         uploadImage: async (file) => {
           const asset = await notesApi.uploadAsset(document.id, file);
           return assetMarkdownPath(document.id, asset.name);
@@ -64,9 +72,15 @@ export const MarkdownEditor = forwardRef<
         proxyImageUrl: (url) => assetPreviewUrl(url),
       }),
     );
+    const stopObservingToolbar = observeCrepeToolbar(root, {
+      formatBlock: (format) => {
+        crepe.editor.action((ctx) => applyBlockFormat(ctx, format));
+      },
+    });
+    configureCodePaste(crepe);
     crepe.on((listener) => {
       listener.markdownUpdated((_ctx, markdown) => {
-        onChangeRef.current(markdown);
+        onChangeRef.current(withInferredCodeBlockLanguages(markdown));
       });
     });
     crepeRef.current = crepe;
@@ -77,7 +91,7 @@ export const MarkdownEditor = forwardRef<
       crepeRef.current = undefined;
       void crepe.destroy();
     };
-  }, [document.content, document.id]);
+  }, [document.id]);
 
   return <div ref={rootRef} className="markdown-editor" data-document-id={document.id} />;
 });

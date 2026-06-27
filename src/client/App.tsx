@@ -1,4 +1,11 @@
-import { useCallback, useEffect, useMemo, useState } from 'react';
+import {
+  forwardRef,
+  useCallback,
+  useEffect,
+  useImperativeHandle,
+  useMemo,
+  useState,
+} from 'react';
 import * as AlertDialog from '@radix-ui/react-alert-dialog';
 import { FilePlus2, Menu, NotebookPen } from 'lucide-react';
 import type { DocumentRecord, TreeNode } from '../shared/types.js';
@@ -26,7 +33,18 @@ interface ConflictState {
   draft: DraftDocument;
 }
 
-export function App() {
+export interface AppHandle {
+  handleBack: () => boolean;
+}
+
+interface AppProps {
+  onOpenServerSettings?: () => void;
+}
+
+export const App = forwardRef<AppHandle, AppProps>(function App(
+  { onOpenServerSettings },
+  ref,
+) {
   const [tree, setTree] = useState<TreeNode[]>([]);
   const [view, setView] = useState<AppView>('notes');
   const [document, setDocument] = useState<DocumentRecord>();
@@ -35,7 +53,38 @@ export function App() {
   const [conflict, setConflict] = useState<ConflictState>();
   const [editorEpoch, setEditorEpoch] = useState(0);
   const [drawerOpen, setDrawerOpen] = useState(false);
+  const [treeCollapsed, setTreeCollapsed] = useState(false);
   const [error, setError] = useState('');
+
+  useImperativeHandle(
+    ref,
+    () => ({
+      handleBack() {
+        if (conflict) {
+          setConflict(undefined);
+          return true;
+        }
+        if (deleteNode) {
+          setDeleteNode(undefined);
+          return true;
+        }
+        if (dialog) {
+          setDialog(null);
+          return true;
+        }
+        if (drawerOpen) {
+          setDrawerOpen(false);
+          return true;
+        }
+        if (view !== 'notes') {
+          setView('notes');
+          return true;
+        }
+        return false;
+      },
+    }),
+    [conflict, deleteNode, dialog, drawerOpen, view],
+  );
 
   const reloadTree = useCallback(async () => {
     setTree(await notesApi.tree());
@@ -174,9 +223,16 @@ export function App() {
   }, [dialog]);
 
   return (
-    <div className={`app-shell ${drawerOpen ? 'drawer-open' : ''}`}>
+    <div
+      data-testid="app-shell"
+      className={`app-shell ${drawerOpen ? 'drawer-open' : ''} ${
+        treeCollapsed ? 'tree-collapsed' : ''
+      }`}
+    >
       <NavRail
         view={view}
+        exportUrl={notesApi.exportUrl()}
+        onOpenServerSettings={onOpenServerSettings}
         onChange={(nextView) => {
           setView(nextView);
           setDrawerOpen(false);
@@ -184,8 +240,10 @@ export function App() {
       />
       <div className="mobile-drawer-backdrop" onClick={() => setDrawerOpen(false)} />
       <TreePanel
+        collapsed={treeCollapsed}
         tree={tree}
         selectedId={document?.id}
+        onCollapsedChange={setTreeCollapsed}
         onOpen={(id) => void openDocument(id)}
         onCreateDocument={(parentPath) => setDialog({ kind: 'document', parentPath })}
         onCreateFolder={(parentPath) => setDialog({ kind: 'folder', parentPath })}
@@ -205,11 +263,17 @@ export function App() {
               document={document}
               onSaved={handleSaved}
               onConflict={handleConflict}
-              onOpenSidebar={() => setDrawerOpen(true)}
+              onOpenSidebar={() => {
+                setTreeCollapsed(false);
+                setDrawerOpen(true);
+              }}
             />
           ) : (
             <EmptyWorkspace
-              onOpenSidebar={() => setDrawerOpen(true)}
+              onOpenSidebar={() => {
+                setTreeCollapsed(false);
+                setDrawerOpen(true);
+              }}
               onCreate={() => setDialog({ kind: 'document', parentPath: '' })}
             />
           ))}
@@ -267,7 +331,7 @@ export function App() {
       <GlobalTooltip />
     </div>
   );
-}
+});
 
 function EmptyWorkspace({
   onOpenSidebar,

@@ -6,5 +6,9 @@ test-results/
 .env
 data/
 .superpowers/
-.tmp-e2e-data/
+.tmp-e2e-data*/
 *.log
+android/keystore.properties
+android/app/*.jks
+android/app/*.keystore
+android/signing-password.txt

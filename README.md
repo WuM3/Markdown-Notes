@@ -11,6 +11,30 @@ npm install
 Copy-Item .env.example .env
 npm run build
 .\scripts\start.ps1
+
+手动启动
+
+npm install
+npm run build
+npm start
+
+启动成功后浏览器访问：
+
+http://localhost:3210
+
+验证是否安装成功：
+
+Get-ScheduledTask -TaskName PersonalMarkdownNotes
+
+
+如果能看到任务，说明开机登录后会自动启动。你也可以手动启动它：
+
+Start-ScheduledTask -TaskName PersonalMarkdownNotes
+
+
+npm run dev：开发用，网页地址通常是 http://localhost:5173，后端是 3211。
+npm start：正式使用，网页和 API 都在 http://localhost:3210。
+
 ```
 
 浏览器访问：
@@ -56,6 +80,63 @@ npm run typecheck
 npm run build
 npm run test:e2e
 ```
+
+## Android APP
+
+Android APP 是局域网客户端，Markdown 和附件仍只保存在运行 Fastify 服务的电脑上。APP 与电脑必须连接同一可信局域网。
+
+首次启动 APP 时填写电脑地址，例如：
+
+```text
+http://192.168.1.10:3210
+```
+
+地址可以省略 `http://`。连接成功后 APP 会保存最近 5 个服务器地址。导航栏中的“服务器设置”可以测试、切换或删除历史地址。
+
+### Android 工具链
+
+- Node.js 22 或更高版本
+- JDK 21
+- Android Studio 与 Android SDK
+- Android SDK Platform 36、Build Tools、Platform Tools
+- 最低支持 Android 7.0（API 24）
+
+确保环境变量指向 Android SDK：
+
+```powershell
+$env:ANDROID_HOME = "E:\Android-SDK"
+$env:ANDROID_SDK_ROOT = "E:\Android-SDK"
+```
+
+### 构建与安装
+
+```powershell
+npm run android:sync
+npm run android:open
+npm run android:debug
+npm run android:test
+npm run android:apk
+```
+
+仓库位于中文路径时，Android Gradle 的 JUnit worker 无法直接加载测试 classpath。`android:test` 会临时映射一个空闲 ASCII 盘符运行测试，并在结束后自动解除映射。
+
+- Debug APK：`android/app/build/outputs/apk/debug/app-debug.apk`
+- 签名 Release APK：`android/app/build/outputs/apk/release/app-release.apk`
+
+首次运行 `npm run android:apk` 会在本机生成 release keystore、签名属性和密码备份。这些文件已加入 `.gitignore`。请离线备份：
+
+```text
+android/app/markdown-notes-release.jks
+android/signing-password.txt
+```
+
+更新 APP 时继续使用同一 keystore，并提高 `android/app/build.gradle` 中的 `versionCode`。手机允许安装未知来源应用后，可以直接打开 APK 安装；也可以使用：
+
+```powershell
+adb install -r android/app/build/outputs/apk/release/app-release.apk
+```
+
+如果 APP 无法连接，请确认电脑服务正在监听 `0.0.0.0:3210`、Windows 防火墙已放行端口，并且填写的是电脑的局域网 IPv4 地址而不是 `127.0.0.1`。
 
 ## 数据目录
 

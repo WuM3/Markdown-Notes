@@ -1,6 +1,7 @@
 import { describe, expect, it, vi } from 'vitest';
 import {
   MemoryProfileStore,
+  PreferencesProfileStore,
   normalizeServerUrl,
   rememberServerProfile,
   testServerConnection,
@@ -62,5 +63,49 @@ describe('server profile utilities', () => {
       signal: expect.any(AbortSignal),
     });
   });
-});
 
+  it('rejects a server that does not return the expected health payload', async () => {
+    const fetcher = vi.fn().mockResolvedValue(
+      new Response(JSON.stringify({ status: 'unknown' }), {
+        status: 200,
+        headers: { 'content-type': 'application/json' },
+      }),
+    );
+
+    await expect(
+      testServerConnection('10.0.0.8:3210', fetcher),
+    ).rejects.toThrow('不是兼容的个人笔记服务');
+  });
+
+  it('persists server history and the active server through Preferences', async () => {
+    const values = new Map<string, string>();
+    const preferences = {
+      get: vi.fn(async ({ key }: { key: string }) => ({
+        value: values.get(key) ?? null,
+      })),
+      set: vi.fn(async ({ key, value }: { key: string; value: string }) => {
+        values.set(key, value);
+      }),
+      remove: vi.fn(async ({ key }: { key: string }) => {
+        values.delete(key);
+      }),
+    };
+    const store = new PreferencesProfileStore(preferences);
+
+    await store.save([
+      {
+        id: 'http://192.168.1.2:3210',
+        baseUrl: 'http://192.168.1.2:3210',
+        lastConnectedAt: '2026-06-25T08:00:00.000Z',
+      },
+    ]);
+    await store.setActive('http://192.168.1.2:3210');
+
+    expect(await store.list()).toHaveLength(1);
+    expect(await store.getActive()).toBe('http://192.168.1.2:3210');
+
+    await store.removeProfile('http://192.168.1.2:3210');
+    expect(await store.list()).toEqual([]);
+    expect(await store.getActive()).toBeUndefined();
+  });
+});

@@ -12,6 +12,7 @@ import Fastify, {
 } from 'fastify';
 import type { DocumentRecord, NodeKind } from '../shared/types.js';
 import { NotesRepository, RevisionConflictError } from './repository.js';
+import { importRemoteMarkdownImages } from './remote-assets.js';
 import { SearchIndex } from './search-index.js';
 
 interface BuildAppOptions {
@@ -82,15 +83,26 @@ export async function buildApp(options: BuildAppOptions): Promise<FastifyInstanc
 
   app.put('/api/documents/:id', async (request, reply) => {
     const { id } = request.params as { id: string };
+    const body = request.body as {
+      title: string;
+      content: string;
+      revision: string;
+    };
     try {
-      const document = await repository.saveDocument(
-        id,
-        request.body as {
-          title: string;
-          content: string;
-          revision: string;
-        },
-      );
+      const current = await repository.getDocument(id);
+      if (current.revision !== body.revision) {
+        throw new RevisionConflictError(current);
+      }
+      const content = await importRemoteMarkdownImages({
+        markdown: body.content,
+        documentId: id,
+        repository,
+        maxBytes: imageLimitBytes,
+      });
+      const document = await repository.saveDocument(id, {
+        ...body,
+        content,
+      });
       searchIndex.upsert(document);
       return document;
     } catch (error) {
