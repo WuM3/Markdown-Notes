@@ -179,5 +179,3 @@ ATTACHMENT_LIMIT_MB=100
 本项目没有登录和 HTTPS，只应运行在可信局域网。任何能访问端口的设备都可以编辑或删除笔记。
 
 项目不内置自动备份。建议定期使用 ZIP 导出，或直接复制整个 `DATA_DIR` 到其他磁盘。
-
-# Markdown-Notes

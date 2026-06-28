@@ -740,6 +740,7 @@ input:focus-visible {
 }
 
 .markdown-editor .ProseMirror {
+  position: relative;
   min-height: 520px;
   padding: 0 0 160px;
   color: #2a3039;
@@ -813,6 +814,110 @@ input:focus-visible {
 .markdown-editor .ProseMirror em {
   font-style: oblique 12deg;
   font-synthesis: style;
+}
+
+.markdown-editor .milkdown .milkdown-image-block {
+  max-width: 100%;
+}
+
+.markdown-editor .milkdown .milkdown-image-block > .image-wrapper {
+  max-width: 100%;
+  overflow: visible;
+}
+
+.markdown-editor .milkdown .milkdown-image-block > .image-wrapper::before {
+  pointer-events: none;
+}
+
+.markdown-editor .milkdown .milkdown-image-block > .image-wrapper img {
+  max-width: 100%;
+  height: auto !important;
+  min-height: 0;
+  object-fit: contain;
+}
+
+.markdown-editor .milkdown .milkdown-image-block.selected > .image-wrapper {
+  outline: 1px solid #2f66d0;
+  outline-offset: 2px;
+}
+
+.markdown-editor .milkdown .milkdown-image-block > .image-wrapper > .image-resize-handle {
+  display: none;
+}
+
+.image-corner-resize-handle {
+  position: absolute;
+  z-index: 3;
+  display: block;
+  width: 11px;
+  height: 11px;
+  border: 1px solid #2f66d0;
+  border-radius: 50%;
+  background: #fff;
+  opacity: 0;
+  transition:
+    opacity var(--motion-fast) var(--motion-ease),
+    transform var(--motion-fast) var(--motion-ease);
+}
+
+.milkdown-image-block.selected .image-corner-resize-handle,
+.milkdown-image-block:hover .image-corner-resize-handle {
+  opacity: 1;
+}
+
+.image-corner-resize-handle-top-left {
+  top: -7px;
+  left: -7px;
+  cursor: nwse-resize;
+}
+
+.image-corner-resize-handle-top-right {
+  top: -7px;
+  right: -7px;
+  cursor: nesw-resize;
+}
+
+.image-corner-resize-handle-bottom-left {
+  bottom: -7px;
+  left: -7px;
+  cursor: nesw-resize;
+}
+
+.image-corner-resize-handle-bottom-right {
+  right: -7px;
+  bottom: -7px;
+  cursor: nwse-resize;
+}
+
+.editor-marquee-selection {
+  position: absolute;
+  z-index: 8;
+  display: none;
+  border: 1px solid #2f66d0;
+  background: rgb(47 102 208 / 16%);
+  pointer-events: none;
+}
+
+.editor-marquee-selection[data-active="true"] {
+  display: block;
+}
+
+.editor-marquee-highlights {
+  position: absolute;
+  inset: 0;
+  z-index: 7;
+  display: none;
+  pointer-events: none;
+}
+
+.editor-marquee-highlights[data-active="true"] {
+  display: block;
+}
+
+.editor-marquee-highlight {
+  position: absolute;
+  border-radius: 4px;
+  background: rgb(47 102 208 / 24%);
 }
 
 .markdown-editor .toolbar-text-icon {

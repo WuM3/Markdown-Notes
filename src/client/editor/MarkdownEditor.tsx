@@ -12,6 +12,7 @@ import { assetMarkdownPath, assetPreviewUrl } from './asset-paths.js';
 import { buildCrepeOptions } from './crepe-config.js';
 import { withInferredCodeBlockLanguages } from './code-block-language.js';
 import { configureCodePaste } from './code-paste.js';
+import { configureImageInteractions } from './image-interactions.js';
 import { observeCrepeToolbar } from './toolbar-tooltips.js';
 import { applyBlockFormat } from './toolbar-commands.js';
 
@@ -78,6 +79,7 @@ export const MarkdownEditor = forwardRef<
       },
     });
     configureCodePaste(crepe);
+    const stopImageInteractions = configureImageInteractions(crepe, root);
     crepe.on((listener) => {
       listener.markdownUpdated((_ctx, markdown) => {
         onChangeRef.current(withInferredCodeBlockLanguages(markdown));
@@ -88,6 +90,7 @@ export const MarkdownEditor = forwardRef<
 
     return () => {
       stopObservingToolbar();
+      stopImageInteractions();
       crepeRef.current = undefined;
       void crepe.destroy();
     };
