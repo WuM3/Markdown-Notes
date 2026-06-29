@@ -122,11 +122,15 @@ function createToolbarMenuController(
     }
     closeMenu();
   };
+  const onScroll = () => repositionMenu();
+  const onResize = () => repositionMenu();
 
   root.addEventListener('pointerover', onPointerOver);
   root.addEventListener('focusin', onFocusIn);
   root.addEventListener('pointerdown', onPointerDown);
   owner.addEventListener('pointerdown', onDocumentPointerDown);
+  owner.addEventListener('scroll', onScroll, true);
+  owner.defaultView?.addEventListener('resize', onResize);
 
   function openMenu(kind: MenuKind, nextTrigger: HTMLButtonElement) {
     if (trigger === nextTrigger && menu?.isConnected) return;
@@ -158,11 +162,18 @@ function createToolbarMenuController(
     menu = undefined;
   }
 
+  function repositionMenu() {
+    if (!menu || !trigger) return;
+    if (!trigger.isConnected) {
+      closeMenu();
+      return;
+    }
+    positionMenu(menu, trigger);
+  }
+
   return {
     refresh() {
-      if (menu && trigger) {
-        positionMenu(menu, trigger);
-      }
+      repositionMenu();
     },
     destroy() {
       closeMenu();
@@ -170,6 +181,8 @@ function createToolbarMenuController(
       root.removeEventListener('focusin', onFocusIn);
       root.removeEventListener('pointerdown', onPointerDown);
       owner.removeEventListener('pointerdown', onDocumentPointerDown);
+      owner.removeEventListener('scroll', onScroll, true);
+      owner.defaultView?.removeEventListener('resize', onResize);
     },
   };
 }

@@ -19,6 +19,9 @@
   --warning: #a15c00;
   --muted: #737b88;
   --focus: #87a8ed;
+  --floating-toolbar-bg: #fff7f1;
+  --floating-toolbar-border: #eadfd6;
+  --floating-toolbar-hover: #f3ebe3;
   --motion-fast: 120ms;
   --motion-medium: 160ms;
   --motion-slow: 180ms;
@@ -516,6 +519,7 @@ input:focus-visible {
 }
 
 .document-canvas {
+  position: relative;
   display: grid;
   grid-template-columns: 420px minmax(0, 860px);
   column-gap: 18px;
@@ -739,6 +743,11 @@ input:focus-visible {
   background: transparent;
 }
 
+.markdown-editor .milkdown-toolbar {
+  border-color: var(--floating-toolbar-border) !important;
+  background: var(--floating-toolbar-bg) !important;
+}
+
 .markdown-editor .ProseMirror {
   position: relative;
   min-height: 520px;
@@ -951,10 +960,10 @@ input:focus-visible {
   flex-direction: column;
   gap: 2px;
   padding: 6px;
-  border: 1px solid #dde2e8;
+  border: 1px solid var(--floating-toolbar-border);
   border-radius: 7px;
-  background: #fff;
-  box-shadow: 0 14px 40px rgb(31 39 50 / 18%);
+  background: var(--floating-toolbar-bg);
+  box-shadow: 0 14px 40px rgb(87 69 52 / 18%);
   animation: menu-enter var(--motion-medium) var(--motion-ease);
 }
 
@@ -968,7 +977,7 @@ input:focus-visible {
   border: 0;
   border-radius: 5px;
   background: transparent;
-  color: #26303d;
+  color: #4f4338;
   cursor: pointer;
   font: inherit;
   text-align: left;
@@ -979,7 +988,7 @@ input:focus-visible {
 
 .toolbar-menu-item:hover,
 .toolbar-menu-item:focus-visible {
-  background: #f1f5fb;
+  background: var(--floating-toolbar-hover);
   color: #225fca;
   outline: 0;
 }

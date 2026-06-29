@@ -9,6 +9,7 @@ import { computeTooltipPosition } from '../../src/client/components/tooltip-posi
 import {
   CREPE_TOOLBAR_LABELS,
   annotateCrepeToolbar,
+  observeCrepeToolbar,
 } from '../../src/client/editor/toolbar-tooltips.js';
 
 describe('GlobalTooltip', () => {
@@ -81,5 +82,42 @@ describe('Milkdown toolbar tooltip annotations', () => {
     expect(buttons.map((button) => button.dataset.tooltip)).toEqual(
       CREPE_TOOLBAR_LABELS,
     );
+  });
+
+  it('repositions the format menu when the document scrolls', () => {
+    const root = document.createElement('div');
+    root.innerHTML = `<div class="milkdown-toolbar">${'<button class="toolbar-item"></button>'.repeat(6)}</div>`;
+    document.body.append(root);
+
+    const buttons = [...root.querySelectorAll<HTMLButtonElement>('.toolbar-item')];
+    const trigger = buttons[5];
+    let triggerTop = 40;
+    trigger.getBoundingClientRect = () =>
+      ({
+        left: 24,
+        right: 72,
+        top: triggerTop,
+        bottom: triggerTop + 28,
+        width: 48,
+        height: 28,
+        x: 24,
+        y: triggerTop,
+        toJSON: () => ({}),
+      }) as DOMRect;
+
+    const stop = observeCrepeToolbar(root, { formatBlock: vi.fn() });
+
+    try {
+      fireEvent.pointerOver(trigger);
+      const menu = document.body.querySelector<HTMLElement>('.toolbar-popover-menu');
+      expect(menu?.style.top).toBe('74px');
+
+      triggerTop = 112;
+      document.dispatchEvent(new Event('scroll'));
+      expect(menu?.style.top).toBe('146px');
+    } finally {
+      stop();
+      root.remove();
+    }
   });
 });

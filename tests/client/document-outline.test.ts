@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest';
 import {
   buildOutlineTree,
   parseMarkdownHeadings,
+  resolveActiveHeadingId,
 } from '../../src/client/editor/document-outline.js';
 
 describe('document outline parsing', () => {
@@ -47,5 +48,18 @@ describe('document outline parsing', () => {
       },
       { title: '三', children: [] },
     ]);
+  });
+
+  it('resolves the active heading from the viewport anchor', () => {
+    const positions = [
+      { id: 'heading-0', top: 80 },
+      { id: 'heading-1', top: 240 },
+      { id: 'heading-2', top: 520 },
+    ];
+
+    expect(resolveActiveHeadingId(positions, 40)).toBe('heading-0');
+    expect(resolveActiveHeadingId(positions, 260)).toBe('heading-1');
+    expect(resolveActiveHeadingId(positions, 620)).toBe('heading-2');
+    expect(resolveActiveHeadingId([], 260)).toBeUndefined();
   });
 });

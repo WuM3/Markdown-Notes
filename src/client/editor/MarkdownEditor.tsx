@@ -1,5 +1,6 @@
 import {
   forwardRef,
+  type RefObject,
   useEffect,
   useImperativeHandle,
   useRef,
@@ -23,13 +24,14 @@ export interface MarkdownEditorHandle {
 
 interface MarkdownEditorProps {
   document: DocumentRecord;
+  marqueeRootRef?: RefObject<HTMLElement | null>;
   onChange: (markdown: string) => void;
 }
 
 export const MarkdownEditor = forwardRef<
   MarkdownEditorHandle,
   MarkdownEditorProps
->(function MarkdownEditor({ document, onChange }, ref) {
+>(function MarkdownEditor({ document, marqueeRootRef, onChange }, ref) {
   const rootRef = useRef<HTMLDivElement>(null);
   const crepeRef = useRef<Crepe | undefined>(undefined);
   const onChangeRef = useRef(onChange);
@@ -79,7 +81,9 @@ export const MarkdownEditor = forwardRef<
       },
     });
     configureCodePaste(crepe);
-    const stopImageInteractions = configureImageInteractions(crepe, root);
+    const stopImageInteractions = configureImageInteractions(crepe, root, {
+      getMarqueeRoot: () => marqueeRootRef?.current ?? root,
+    });
     crepe.on((listener) => {
       listener.markdownUpdated((_ctx, markdown) => {
         onChangeRef.current(withInferredCodeBlockLanguages(markdown));
@@ -94,7 +98,7 @@ export const MarkdownEditor = forwardRef<
       crepeRef.current = undefined;
       void crepe.destroy();
     };
-  }, [document.id]);
+  }, [document.id, marqueeRootRef]);
 
   return <div ref={rootRef} className="markdown-editor" data-document-id={document.id} />;
 });

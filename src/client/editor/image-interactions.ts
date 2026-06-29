@@ -1,5 +1,5 @@
 import type { Crepe } from '@milkdown/crepe';
-import { editorViewOptionsCtx } from '@milkdown/kit/core';
+import { editorViewCtx, editorViewOptionsCtx } from '@milkdown/kit/core';
 import { NodeSelection, TextSelection } from '@milkdown/kit/prose/state';
 import type { EditorView } from '@milkdown/kit/prose/view';
 
@@ -78,6 +78,7 @@ export interface MarqueeHighlightInput {
   editorRect: DOMRect;
   selectionRect: DOMRect;
   lineRects: DOMRect[];
+  hitAreaRect?: DOMRect;
 }
 
 export interface MarqueeHighlightRect {
@@ -87,11 +88,76 @@ export interface MarqueeHighlightRect {
   height: number;
 }
 
+export interface MarqueeBlockHitInput {
+  selectionRect: DOMRect;
+  fallbackRect: DOMRect;
+  lineRects: DOMRect[];
+  hitAreaRect: DOMRect;
+}
+
+export interface MarqueeHitInput {
+  editorRoot: HTMLElement;
+  editorRect: DOMRect;
+  selectionRect: DOMRect;
+  hitAreaRect?: DOMRect;
+}
+
+export interface MarqueeHit {
+  block: HTMLElement;
+  blockIndex: number;
+  lineRects: DOMRect[];
+  highlightRects: MarqueeHighlightRect[];
+}
+
+export interface MarqueeDomBlockRangeInput {
+  editorRoot: HTMLElement;
+  block: HTMLElement;
+  nodeSizes: number[];
+  docSize: number;
+}
+
+export interface MarqueeDomBlockRange {
+  from: number;
+  to: number;
+}
+
+export interface MarqueeClearPositionInput {
+  docSize: number;
+  currentFrom: number;
+  currentTo: number;
+  clickPosition?: number;
+}
+
+export interface ImageInteractionOptions {
+  getMarqueeRoot?: () => HTMLElement | null;
+}
+
 export function configureImageInteractions(
   crepe: Crepe,
   root: HTMLElement,
+  options: ImageInteractionOptions = {},
 ): () => void {
   const cleanupImageHandles = observeImageBlocks(root);
+  const pointerRoots = new Set<HTMLElement>([
+    root,
+    options.getMarqueeRoot?.() ?? root,
+  ]);
+  const handleOuterPointerDown = (event: PointerEvent) => {
+    const view = getEditorView(crepe);
+    if (!view) return;
+    const interactionRoot = findOuterMarqueeRoot(
+      event.target,
+      pointerRoots,
+    );
+    if (!interactionRoot) return;
+    if (!shouldHandleOuterMarqueePointerDown(event.target, view.dom, interactionRoot)) {
+      return;
+    }
+    handleMarqueePointerDown(view, event, interactionRoot);
+  };
+  pointerRoots.forEach((pointerRoot) => {
+    pointerRoot.addEventListener('pointerdown', handleOuterPointerDown);
+  });
 
   crepe.editor.config((ctx) => {
     ctx.update(editorViewOptionsCtx, (options) => {
@@ -118,7 +184,12 @@ export function configureImageInteractions(
     });
   });
 
-  return cleanupImageHandles;
+  return () => {
+    pointerRoots.forEach((pointerRoot) => {
+      pointerRoot.removeEventListener('pointerdown', handleOuterPointerDown);
+    });
+    cleanupImageHandles();
+  };
 }
 
 export function ensureImageResizeHandles(block: HTMLElement): void {
@@ -242,36 +313,114 @@ export function shouldStartMarqueeSelection(
   editorRoot: HTMLElement,
   point?: PointerPoint,
 ): boolean {
+  void point;
   if (!(target instanceof HTMLElement)) return false;
   if (!editorRoot.contains(target)) return false;
   if (target.closest(`${handleSelector}, button, input, textarea, select, a, img, ${imageBlockSelector}`)) {
     return false;
   }
-  if (target === editorRoot) return true;
+  if (target === editorRoot) return !isEditableRoot(editorRoot);
 
   const contentBlock = target.closest<HTMLElement>(
     'p, h1, h2, h3, h4, h5, li, blockquote, pre, table',
   );
   if (!contentBlock || !editorRoot.contains(contentBlock)) return true;
-  if (!point) return false;
 
-  const contentRect = getContentRect(contentBlock);
-  if (!contentRect) return false;
+  return false;
+}
 
-  return !isPointInsideRect(point, contentRect, 2);
+export function shouldHandleOuterMarqueePointerDown(
+  target: EventTarget | null,
+  editorRoot: HTMLElement,
+  interactionRoot: HTMLElement,
+): boolean {
+  if (!(target instanceof HTMLElement)) return false;
+  if (!interactionRoot.contains(target)) return false;
+  if (editorRoot.contains(target)) return false;
+  return shouldStartMarqueeSelection(target, interactionRoot);
 }
 
 export function calculateMarqueeHighlightRects(
   input: MarqueeHighlightInput,
 ): MarqueeHighlightRect[] {
-  return mergeLineRects(input.lineRects)
-    .filter((rect) => rectanglesIntersect(input.selectionRect, rect))
-    .map((rect) => ({
-      left: Math.round(rect.left - input.editorRect.left),
-      top: Math.round(rect.top - input.editorRect.top),
-      width: Math.round(rect.width),
-      height: Math.round(rect.height),
-    }));
+  const hitAreaRect = input.hitAreaRect ?? input.editorRect;
+  return getMarqueeHitLineRects({
+    selectionRect: input.selectionRect,
+    fallbackRect: input.editorRect,
+    lineRects: input.lineRects,
+    hitAreaRect,
+  }).map((rect) => marqueeHighlightRectFromLine(rect, input.editorRect));
+}
+
+export function isMarqueeBlockHit(input: MarqueeBlockHitInput): boolean {
+  return getMarqueeHitLineRects(input).length > 0;
+}
+
+export function collectMarqueeHits(input: MarqueeHitInput): MarqueeHit[] {
+  const hitAreaRect = input.hitAreaRect ?? input.editorRect;
+  return getMarqueeSelectableChildren(input.editorRoot).flatMap(
+    (block, blockIndex) => {
+      const fallbackRect = block.getBoundingClientRect();
+      if (fallbackRect.width <= 0 || fallbackRect.height <= 0) return [];
+
+      const lineRects = getMarqueeHitLineRects({
+        selectionRect: input.selectionRect,
+        fallbackRect,
+        lineRects: getElementLineRects(block),
+        hitAreaRect,
+      });
+      if (!lineRects.length) return [];
+
+      return [
+        {
+          block,
+          blockIndex,
+          lineRects,
+          highlightRects: lineRects.map((rect) =>
+            marqueeHighlightRectFromLine(rect, input.editorRect),
+          ),
+        },
+      ];
+    },
+  );
+}
+
+export function resolveMarqueeDomBlockRange(
+  input: MarqueeDomBlockRangeInput,
+): MarqueeDomBlockRange | undefined {
+  const children = getMarqueeSelectableChildren(input.editorRoot);
+  if (children.length !== input.nodeSizes.length) return undefined;
+
+  const blockIndex = children.findIndex((child) => child === input.block);
+  if (blockIndex < 0) return undefined;
+
+  const from = input.nodeSizes
+    .slice(0, blockIndex)
+    .reduce((total, size) => total + size, 0);
+  const to = Math.min(from + input.nodeSizes[blockIndex], input.docSize);
+  if (to <= from) return undefined;
+
+  return { from, to };
+}
+
+export function resolveMarqueeClearPosition(
+  input: MarqueeClearPositionInput,
+): number | undefined {
+  if (input.currentFrom === input.currentTo) return undefined;
+  const position = input.clickPosition ?? input.currentTo;
+  return Math.max(0, Math.min(position, input.docSize));
+}
+
+export function isSuspiciousMarqueeStartPosition(input: {
+  editorRoot: HTMLElement;
+  block: HTMLElement;
+  start: number;
+}): boolean {
+  if (input.start !== 0) return false;
+  const blockIndex = getMarqueeSelectableChildren(input.editorRoot).findIndex(
+    (child) => child === input.block,
+  );
+  return blockIndex > 0;
 }
 
 function observeImageBlocks(root: HTMLElement): () => void {
@@ -499,9 +648,11 @@ async function writeImageToClipboard(image: HTMLImageElement): Promise<void> {
 function handleMarqueePointerDown(
   view: EditorView,
   event: PointerEvent,
+  overlayHost: HTMLElement = view.dom,
 ): boolean {
   if (event.button !== 0) return false;
   if (
+    overlayHost === view.dom &&
     !shouldStartMarqueeSelection(event.target, view.dom, {
       clientX: event.clientX,
       clientY: event.clientY,
@@ -512,19 +663,20 @@ function handleMarqueePointerDown(
 
   const startX = event.clientX;
   const startY = event.clientY;
-  const editorRect = view.dom.getBoundingClientRect();
+  const overlayRect = overlayHost.getBoundingClientRect();
   let didMove = false;
+  let currentHits: MarqueeHit[] = [];
 
   const marquee = document.createElement('div');
   marquee.className = 'editor-marquee-selection';
-  view.dom.append(marquee);
+  overlayHost.append(marquee);
   const highlights = document.createElement('div');
   highlights.className = 'editor-marquee-highlights';
-  view.dom.append(highlights);
+  overlayHost.append(highlights);
 
   const updateMarquee = (moveEvent: PointerEvent) => {
-    const left = Math.min(startX, moveEvent.clientX) - editorRect.left;
-    const top = Math.min(startY, moveEvent.clientY) - editorRect.top;
+    const left = Math.min(startX, moveEvent.clientX) - overlayRect.left;
+    const top = Math.min(startY, moveEvent.clientY) - overlayRect.top;
     const width = Math.abs(moveEvent.clientX - startX);
     const height = Math.abs(moveEvent.clientY - startY);
     didMove ||= width > 4 || height > 4;
@@ -534,13 +686,15 @@ function handleMarqueePointerDown(
     marquee.style.width = `${width}px`;
     marquee.style.height = `${height}px`;
     marquee.dataset.active = didMove ? 'true' : 'false';
+    currentHits = collectMarqueeHits({
+      editorRoot: view.dom,
+      editorRect: overlayRect,
+      selectionRect: normalizeDomRect(startX, startY, moveEvent.clientX, moveEvent.clientY),
+      hitAreaRect: overlayRect,
+    });
     renderMarqueeHighlights(
       highlights,
-      calculateMarqueeHighlightRects({
-        editorRect,
-        selectionRect: normalizeDomRect(startX, startY, moveEvent.clientX, moveEvent.clientY),
-        lineRects: collectMarqueeLineRects(view.dom),
-      }),
+      currentHits.flatMap((hit) => hit.highlightRects),
       didMove,
     );
   };
@@ -554,10 +708,22 @@ function handleMarqueePointerDown(
     window.removeEventListener('pointerup', onPointerUp);
     marquee.remove();
     highlights.remove();
-    if (!didMove) return;
+    if (!didMove) {
+      clearMarqueeSelection(view, {
+        clientX: upEvent.clientX,
+        clientY: upEvent.clientY,
+      });
+      return;
+    }
 
     const selectionRect = normalizeDomRect(startX, startY, upEvent.clientX, upEvent.clientY);
-    applyMarqueeSelection(view, selectionRect);
+    const hits = collectMarqueeHits({
+      editorRoot: view.dom,
+      editorRect: overlayRect,
+      selectionRect,
+      hitAreaRect: overlayRect,
+    });
+    applyMarqueeSelection(view, hits.length ? hits : currentHits);
   };
 
   window.addEventListener('pointermove', onPointerMove);
@@ -567,20 +733,45 @@ function handleMarqueePointerDown(
   return true;
 }
 
-function applyMarqueeSelection(view: EditorView, selectionRect: DOMRect): void {
-  const blocks = Array.from(view.dom.children).filter((child) => {
-    if (!(child instanceof HTMLElement)) return false;
-    if (child.matches(`${marqueeSelector}, ${marqueeHighlightLayerSelector}`)) return false;
-    return rectanglesIntersect(selectionRect, child.getBoundingClientRect());
-  }) as HTMLElement[];
+function getEditorView(crepe: Crepe): EditorView | undefined {
+  try {
+    return crepe.editor.action((ctx) => ctx.get(editorViewCtx));
+  } catch {
+    return undefined;
+  }
+}
 
-  if (!blocks.length) return;
+function findOuterMarqueeRoot(
+  target: EventTarget | null,
+  roots: Set<HTMLElement>,
+): HTMLElement | undefined {
+  if (!(target instanceof HTMLElement)) return undefined;
+  return [...roots]
+    .filter((root) => root.contains(target))
+    .sort((a, b) => getElementDepth(b) - getElementDepth(a))[0];
+}
 
-  const firstBlock = blocks[0];
-  const lastBlock = blocks[blocks.length - 1];
+function getElementDepth(element: HTMLElement): number {
+  let depth = 0;
+  let current: HTMLElement | null = element;
+  while (current.parentElement) {
+    depth += 1;
+    current = current.parentElement;
+  }
+  return depth;
+}
+
+function applyMarqueeSelection(
+  view: EditorView,
+  hits: MarqueeHit[],
+): void {
+  if (!hits.length) return;
+
+  const firstBlock = hits[0]?.block;
+  const lastBlock = hits[hits.length - 1]?.block;
   if (!firstBlock || !lastBlock) return;
 
-  if (blocks.length === 1 && firstBlock.matches(imageBlockSelector)) {
+  if (hits.length === 1 && isImageBlockElement(firstBlock)) {
     const pos = findImageBlockPosition(view, firstBlock);
     if (pos === undefined) return;
     view.dispatch(
@@ -602,24 +793,81 @@ function applyMarqueeSelection(view: EditorView, selectionRect: DOMRect): void {
   view.dispatch(view.state.tr.setSelection(selection).scrollIntoView());
 }
 
+function clearMarqueeSelection(view: EditorView, point: PointerPoint): void {
+  const clearPosition = resolveMarqueeClearPosition({
+    docSize: view.state.doc.content.size,
+    currentFrom: view.state.selection.from,
+    currentTo: view.state.selection.to,
+    clickPosition: findPointDocumentPosition(view, point),
+  });
+  if (clearPosition === undefined) return;
+
+  try {
+    const selection = TextSelection.near(
+      view.state.doc.resolve(clearPosition),
+      -1,
+    );
+    view.dispatch(view.state.tr.setSelection(selection));
+    view.focus();
+  } catch {
+    // Some atom-only documents may not have a nearby text cursor position.
+  }
+}
+
+function findPointDocumentPosition(
+  view: EditorView,
+  point: PointerPoint,
+): number | undefined {
+  try {
+    return view.posAtCoords({
+      left: point.clientX,
+      top: point.clientY,
+    })?.pos;
+  } catch {
+    return undefined;
+  }
+}
+
+function getMarqueeSelectableChildren(editorRoot: HTMLElement): HTMLElement[] {
+  return Array.from(editorRoot.children).filter((child) => {
+    if (!(child instanceof HTMLElement)) return false;
+    return !child.matches(`${marqueeSelector}, ${marqueeHighlightLayerSelector}`);
+  }) as HTMLElement[];
+}
+
 function findImageBlockPosition(
   view: EditorView,
   block: HTMLElement,
 ): number | undefined {
-  const selection = view.state.selection;
+  const blockRange = findBlockRangeByDomIndex(view, block);
   if (
-    selection instanceof NodeSelection &&
-    selection.node.type.name === 'image-block'
+    blockRange !== undefined &&
+    view.state.doc.nodeAt(blockRange.from)?.type.name === 'image-block'
   ) {
-    return selection.from;
+    return blockRange.from;
   }
 
-  const domPosition = safePosAtDom(view, block, 0);
-  if (domPosition === undefined) return undefined;
+  const image = block.querySelector<HTMLElement>(imageSelector);
+  const candidates = [
+    ...findElementCoordinatePositions(view, block),
+    safePosAtDom(view, block, 0),
+    safePosAtDom(view, block, block.childNodes.length),
+    image ? safePosAtDom(view, image, 0) : undefined,
+  ];
 
-  for (const pos of [domPosition, domPosition - 1, domPosition + 1]) {
-    if (pos < 0 || pos > view.state.doc.content.size) continue;
-    if (view.state.doc.nodeAt(pos)?.type.name === 'image-block') return pos;
+  for (const pos of candidates) {
+    const imagePos = findImageBlockStartAtPosition(view, pos);
+    if (
+      imagePos !== undefined &&
+      isSuspiciousMarqueeStartPosition({
+        editorRoot: view.dom,
+        block,
+        start: imagePos,
+      })
+    ) {
+      continue;
+    }
+    if (imagePos !== undefined) return imagePos;
   }
 
   return undefined;
@@ -629,24 +877,181 @@ function findBlockStartPosition(
   view: EditorView,
   block: HTMLElement,
 ): number | undefined {
-  const pos = safePosAtDom(view, block, 0);
-  if (pos === undefined) return undefined;
-  for (const candidate of [pos, pos - 1, pos + 1]) {
-    if (candidate < 0 || candidate > view.state.doc.content.size) continue;
-    if (view.state.doc.nodeAt(candidate)?.isBlock) return candidate;
+  const blockRange = findBlockRangeByDomIndex(view, block);
+  if (blockRange !== undefined) return blockRange.from;
+
+  const candidates = [
+    ...findElementCoordinatePositions(view, block),
+    safePosAtDom(view, block, 0),
+    safePosAtDom(view, block, block.childNodes.length),
+  ];
+
+  for (const pos of candidates) {
+    const start = findTopLevelBlockStartAtPosition(view, pos);
+    if (
+      start !== undefined &&
+      isSuspiciousMarqueeStartPosition({
+        editorRoot: view.dom,
+        block,
+        start,
+      })
+    ) {
+      continue;
+    }
+    if (start !== undefined) return start;
   }
-  return Math.max(0, Math.min(pos, view.state.doc.content.size));
+
+  return undefined;
 }
 
 function findBlockEndPosition(
   view: EditorView,
   block: HTMLElement,
 ): number | undefined {
+  const blockRange = findBlockRangeByDomIndex(view, block);
+  if (blockRange !== undefined) return blockRange.to;
+
   const start = findBlockStartPosition(view, block);
   if (start === undefined) return undefined;
   const node = view.state.doc.nodeAt(start);
   if (!node) return start;
   return Math.min(start + node.nodeSize, view.state.doc.content.size);
+}
+
+function findBlockRangeByDomIndex(
+  view: EditorView,
+  block: HTMLElement,
+): MarqueeDomBlockRange | undefined {
+  const ranges = getTopLevelDomRanges(view);
+  const range = ranges.find((item) => item.dom === block);
+  if (range) return { from: range.from, to: range.to };
+
+  const domChildren = getMarqueeSelectableChildren(view.dom);
+  if (
+    ranges.length !== view.state.doc.childCount ||
+    ranges.some((item, index) => item.dom !== domChildren[index])
+  ) {
+    return undefined;
+  }
+
+  return resolveMarqueeDomBlockRange({
+    editorRoot: view.dom,
+    block,
+    nodeSizes: ranges.map((range) => range.to - range.from),
+    docSize: view.state.doc.content.size,
+  });
+}
+
+function getTopLevelDomRanges(view: EditorView): Array<MarqueeDomBlockRange & {
+  dom: HTMLElement;
+}> {
+  const ranges: Array<MarqueeDomBlockRange & { dom: HTMLElement }> = [];
+  view.state.doc.forEach((node, offset) => {
+    const nodeDOM = view.nodeDOM(offset);
+    const element =
+      nodeDOM instanceof HTMLElement ? nodeDOM : nodeDOM?.parentElement;
+    const dom = element ? closestDirectChild(view.dom, element) : undefined;
+    if (!dom) return;
+
+    ranges.push({
+      dom,
+      from: offset,
+      to: Math.min(offset + node.nodeSize, view.state.doc.content.size),
+    });
+  });
+  return ranges;
+}
+
+function closestDirectChild(
+  root: HTMLElement,
+  element: HTMLElement,
+): HTMLElement | undefined {
+  let current: HTMLElement | null = element;
+  while (current && current.parentElement !== root) {
+    current = current.parentElement;
+  }
+  return current?.parentElement === root ? current : undefined;
+}
+
+function findElementCoordinatePositions(
+  view: EditorView,
+  element: HTMLElement,
+): number[] {
+  const rect = element.getBoundingClientRect();
+  if (rect.width <= 0 || rect.height <= 0) return [];
+
+  const points = [
+    {
+      left: rect.left + Math.min(8, Math.max(1, rect.width / 2)),
+      top: rect.top + Math.min(12, Math.max(1, rect.height / 2)),
+    },
+    { left: rect.left + rect.width / 2, top: rect.top + rect.height / 2 },
+    {
+      left: rect.right - Math.min(8, Math.max(1, rect.width / 2)),
+      top: rect.bottom - Math.min(12, Math.max(1, rect.height / 2)),
+    },
+  ];
+
+  return points
+    .map((point) => {
+      try {
+        return view.posAtCoords(point)?.pos;
+      } catch {
+        return undefined;
+      }
+    })
+    .filter((pos): pos is number => pos !== undefined);
+}
+
+function findImageBlockStartAtPosition(
+  view: EditorView,
+  pos: number | undefined,
+): number | undefined {
+  if (pos === undefined) return undefined;
+
+  const start = findTopLevelBlockStartAtPosition(view, pos);
+  if (start !== undefined && isImageBlockNodeAt(view, start)) return start;
+
+  const center = clampDocPosition(view, pos);
+  const from = Math.max(0, center - 8);
+  const to = Math.min(view.state.doc.content.size, center + 8);
+  for (let candidate = from; candidate <= to; candidate += 1) {
+    if (isImageBlockNodeAt(view, candidate)) return candidate;
+  }
+
+  return undefined;
+}
+
+function findTopLevelBlockStartAtPosition(
+  view: EditorView,
+  pos: number | undefined,
+): number | undefined {
+  if (pos === undefined) return undefined;
+
+  const doc = view.state.doc;
+  const clamped = clampDocPosition(view, pos);
+  if (doc.nodeAt(clamped)?.isBlock) return clamped;
+
+  const resolved = doc.resolve(clamped);
+  for (let depth = 1; depth <= resolved.depth; depth += 1) {
+    if (resolved.node(depth).isBlock) return resolved.before(depth);
+  }
+
+  const from = Math.max(0, clamped - 8);
+  const to = Math.min(doc.content.size, clamped + 8);
+  for (let candidate = from; candidate <= to; candidate += 1) {
+    if (doc.nodeAt(candidate)?.isBlock) return candidate;
+  }
+
+  return undefined;
+}
+
+function isImageBlockNodeAt(view: EditorView, pos: number): boolean {
+  return view.state.doc.nodeAt(pos)?.type.name === 'image-block';
+}
+
+function clampDocPosition(view: EditorView, pos: number): number {
+  return Math.max(0, Math.min(pos, view.state.doc.content.size));
 }
 
 function safePosAtDom(
@@ -689,20 +1094,47 @@ function rectanglesIntersect(a: DOMRect, b: DOMRect): boolean {
   );
 }
 
-function collectMarqueeLineRects(editorRoot: HTMLElement): DOMRect[] {
-  const rects: DOMRect[] = [];
-  for (const child of Array.from(editorRoot.children)) {
-    if (!(child instanceof HTMLElement)) continue;
-    if (child.matches(`${marqueeSelector}, ${marqueeHighlightLayerSelector}`)) {
-      continue;
-    }
-    rects.push(...getElementLineRects(child));
-  }
-  return rects;
+function isMarqueeRowHit(
+  selectionRect: DOMRect,
+  rowRect: DOMRect,
+  hitAreaRect: DOMRect,
+): boolean {
+  const left = Math.max(
+    hitAreaRect.left,
+    Math.min(rowRect.left, hitAreaRect.right),
+  );
+  const right = Math.max(left, hitAreaRect.right);
+  const rowBand = new DOMRect(
+    left,
+    rowRect.top,
+    Math.max(1, right - left),
+    rowRect.height,
+  );
+  return rectanglesIntersect(selectionRect, rowBand);
+}
+
+function getMarqueeHitLineRects(input: MarqueeBlockHitInput): DOMRect[] {
+  const lineRects = mergeLineRects(input.lineRects);
+  const hitRects = lineRects.length ? lineRects : [input.fallbackRect];
+  return hitRects.filter((rect) =>
+    isMarqueeRowHit(input.selectionRect, rect, input.hitAreaRect),
+  );
+}
+
+function marqueeHighlightRectFromLine(
+  lineRect: DOMRect,
+  editorRect: DOMRect,
+): MarqueeHighlightRect {
+  return {
+    left: Math.round(lineRect.left - editorRect.left),
+    top: Math.round(lineRect.top - editorRect.top),
+    width: Math.round(lineRect.width),
+    height: Math.round(lineRect.height),
+  };
 }
 
 function getElementLineRects(element: HTMLElement): DOMRect[] {
-  if (element.matches(imageBlockSelector)) {
+  if (isImageBlockElement(element)) {
     const rect = element.getBoundingClientRect();
     return rect.width > 0 && rect.height > 0 ? [rect] : [];
   }
@@ -720,6 +1152,17 @@ function getElementLineRects(element: HTMLElement): DOMRect[] {
 
   const fallback = element.getBoundingClientRect();
   return fallback.width > 0 && fallback.height > 0 ? [fallback] : [];
+}
+
+function isImageBlockElement(element: HTMLElement): boolean {
+  return element.matches(imageBlockSelector) || Boolean(element.querySelector(imageSelector));
+}
+
+function isEditableRoot(element: HTMLElement): boolean {
+  return (
+    element.classList.contains('ProseMirror') ||
+    element.getAttribute('contenteditable') === 'true'
+  );
 }
 
 function mergeLineRects(rects: DOMRect[]): DOMRect[] {
@@ -773,35 +1216,6 @@ function renderMarqueeHighlights(
 
 function domRectFromRect(rect: DOMRect | DOMRectReadOnly): DOMRect {
   return new DOMRect(rect.left, rect.top, rect.width, rect.height);
-}
-
-function getContentRect(element: HTMLElement): DOMRect | null {
-  const range = document.createRange();
-  range.selectNodeContents(element);
-  const rangeRect =
-    typeof range.getBoundingClientRect === 'function'
-      ? range.getBoundingClientRect()
-      : undefined;
-  range.detach();
-
-  if (rangeRect && rangeRect.width > 0 && rangeRect.height > 0) return rangeRect;
-
-  const elementRect = element.getBoundingClientRect();
-  if (elementRect.width > 0 && elementRect.height > 0) return elementRect;
-  return null;
-}
-
-function isPointInsideRect(
-  point: PointerPoint,
-  rect: DOMRect,
-  tolerance = 0,
-): boolean {
-  return (
-    point.clientX >= rect.left - tolerance &&
-    point.clientX <= rect.right + tolerance &&
-    point.clientY >= rect.top - tolerance &&
-    point.clientY <= rect.bottom + tolerance
-  );
 }
 
 function escapeHtmlAttribute(value: string): string {

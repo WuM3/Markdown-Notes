@@ -31,7 +31,12 @@ import { DocumentOutline } from './DocumentOutline.js';
 import {
   buildOutlineTree,
   parseMarkdownHeadings,
+  resolveActiveHeadingId,
 } from './document-outline.js';
+
+const headingSelector =
+  '.ProseMirror h1, .ProseMirror h2, .ProseMirror h3, .ProseMirror h4, .ProseMirror h5';
+const activeHeadingAnchorOffset = 72;
 
 export interface DraftDocument {
   title: string;
@@ -71,6 +76,49 @@ export function DocumentEditor({
     () => buildOutlineTree(outlineHeadings),
     [outlineHeadings],
   );
+  const documentCanvasRef = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    const scroller = editorScrollRef.current;
+    if (!scroller) return;
+
+    let frame = 0;
+    const updateActiveHeading = () => {
+      frame = 0;
+      const viewportTop =
+        scroller.getBoundingClientRect().top + activeHeadingAnchorOffset;
+      const headingElements = [
+        ...scroller.querySelectorAll<HTMLElement>(headingSelector),
+      ];
+      const positions = headingElements
+        .map((element, index) => {
+          const heading = outlineHeadings[index];
+          if (!heading) return undefined;
+          return {
+            id: heading.id,
+            top: element.getBoundingClientRect().top,
+          };
+        })
+        .filter((position): position is { id: string; top: number } =>
+          Boolean(position),
+        );
+      const nextActiveId = resolveActiveHeadingId(positions, viewportTop);
+      setActiveHeadingId((current) =>
+        current === nextActiveId ? current : nextActiveId,
+      );
+    };
+    const requestUpdate = () => {
+      if (frame) return;
+      frame = window.requestAnimationFrame(updateActiveHeading);
+    };
+
+    updateActiveHeading();
+    scroller.addEventListener('scroll', requestUpdate, { passive: true });
+    return () => {
+      if (frame) window.cancelAnimationFrame(frame);
+      scroller.removeEventListener('scroll', requestUpdate);
+    };
+  }, [document.id, outlineHeadings]);
 
   useEffect(() => {
     const saver = new DebouncedSaver<DraftDocument>({
@@ -124,9 +172,10 @@ export function DocumentEditor({
 
   function scrollToHeading(index: number) {
     const heading = outlineHeadings[index];
-    const headingElement = editorScrollRef.current?.querySelectorAll<HTMLElement>(
-      '.ProseMirror h1, .ProseMirror h2, .ProseMirror h3, .ProseMirror h4, .ProseMirror h5',
-    )[index];
+    const headingElement =
+      editorScrollRef.current?.querySelectorAll<HTMLElement>(headingSelector)[
+        index
+      ];
     if (!heading || !headingElement) return;
 
     setActiveHeadingId(heading.id);
@@ -228,6 +277,7 @@ export function DocumentEditor({
       <div className="editor-body">
         <div className="editor-scroll" ref={editorScrollRef}>
           <div
+            ref={documentCanvasRef}
             className={`document-canvas ${
               outlineCollapsed ? 'outline-collapsed' : ''
             }`}
@@ -251,6 +301,7 @@ export function DocumentEditor({
               <MarkdownEditor
                 ref={editorRef}
                 document={document}
+                marqueeRootRef={documentCanvasRef}
                 onChange={handleMarkdownChange}
               />
             </div>

@@ -9,6 +9,11 @@ export interface OutlineNode extends OutlineHeading {
   children: OutlineNode[];
 }
 
+export interface HeadingViewportPosition {
+  id: string;
+  top: number;
+}
+
 export function parseMarkdownHeadings(markdown: string): OutlineHeading[] {
   const headings: OutlineHeading[] = [];
   const lines = markdown.split(/\r?\n/);
@@ -59,4 +64,18 @@ export function buildOutlineTree(headings: OutlineHeading[]): OutlineNode[] {
   }
 
   return roots;
+}
+
+export function resolveActiveHeadingId(
+  positions: HeadingViewportPosition[],
+  anchorTop: number,
+): string | undefined {
+  if (positions.length === 0) return undefined;
+
+  let activeId = positions[0].id;
+  for (const position of positions) {
+    if (position.top > anchorTop) break;
+    activeId = position.id;
+  }
+  return activeId;
 }

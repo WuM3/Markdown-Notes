@@ -5,10 +5,16 @@ import {
   calculateCornerResizeRatio,
   calculateImageDisplaySize,
   calculateMarqueeHighlightRects,
+  collectMarqueeHits,
   createImageClipboardFallback,
   ensureImageResizeHandles,
+  isSuspiciousMarqueeStartPosition,
+  isMarqueeBlockHit,
   isMeaningfulResizeGesture,
+  resolveMarqueeDomBlockRange,
+  resolveMarqueeClearPosition,
   resolveResizeGestureStep,
+  shouldHandleOuterMarqueePointerDown,
   shouldStartMarqueeSelection,
 } from '../../src/client/editor/image-interactions.js';
 
@@ -163,7 +169,7 @@ describe('image editor interactions', () => {
     );
   });
 
-  it('starts marquee selection from blank editor space around text blocks', () => {
+  it('keeps native text selection from blank space inside text blocks', () => {
     const editor = document.createElement('div');
     editor.className = 'ProseMirror';
     const paragraph = document.createElement('p');
@@ -175,7 +181,7 @@ describe('image editor interactions', () => {
     paragraph.getBoundingClientRect = () =>
       new DOMRect(0, 0, 260, 32);
 
-    expect(shouldStartMarqueeSelection(editor, editor)).toBe(true);
+    expect(shouldStartMarqueeSelection(editor, editor)).toBe(false);
     expect(
       shouldStartMarqueeSelection(paragraph, editor, {
         clientX: 120,
@@ -187,9 +193,35 @@ describe('image editor interactions', () => {
         clientX: 420,
         clientY: 16,
       }),
-    ).toBe(true);
+    ).toBe(false);
     expect(shouldStartMarqueeSelection(image, editor)).toBe(false);
     expect(shouldStartMarqueeSelection(button, editor)).toBe(false);
+  });
+
+  it('starts marquee selection from the editor shell blank space', () => {
+    const canvas = document.createElement('div');
+    canvas.className = 'document-canvas';
+    const root = document.createElement('div');
+    root.className = 'markdown-editor';
+    const shell = document.createElement('div');
+    shell.className = 'milkdown';
+    const editor = document.createElement('div');
+    editor.className = 'ProseMirror';
+    const paragraph = document.createElement('p');
+    const button = document.createElement('button');
+    paragraph.append('正文');
+    canvas.append(root);
+    root.append(shell);
+    shell.append(editor, button);
+    editor.append(paragraph);
+
+    expect(shouldHandleOuterMarqueePointerDown(canvas, editor, canvas)).toBe(true);
+    expect(shouldHandleOuterMarqueePointerDown(shell, editor, root)).toBe(true);
+    expect(shouldHandleOuterMarqueePointerDown(root, editor, root)).toBe(true);
+    expect(shouldHandleOuterMarqueePointerDown(root, editor, canvas)).toBe(true);
+    expect(shouldHandleOuterMarqueePointerDown(paragraph, editor, root)).toBe(false);
+    expect(shouldHandleOuterMarqueePointerDown(button, editor, root)).toBe(false);
+    expect(shouldHandleOuterMarqueePointerDown(document.body, editor, root)).toBe(false);
   });
 
   it('builds Feishu-like line highlights for text rows inside the marquee', () => {
@@ -210,5 +242,187 @@ describe('image editor interactions', () => {
       { left: 30, top: 116, width: 500, height: 28 },
       { left: 30, top: 160, width: 500, height: 28 },
     ]);
+  });
+
+  it('does not highlight rows when the marquee is only before the row content', () => {
+    const highlights = calculateMarqueeHighlightRects({
+      editorRect: new DOMRect(0, 0, 1000, 600),
+      selectionRect: new DOMRect(40, 150, 80, 30),
+      lineRects: [
+        new DOMRect(300, 148, 520, 28),
+        new DOMRect(300, 210, 520, 28),
+      ],
+      hitAreaRect: new DOMRect(0, 0, 1000, 600),
+    });
+
+    expect(highlights).toEqual([]);
+  });
+
+  it('hits text blocks by rendered rows instead of the whole block box', () => {
+    const hitAreaRect = new DOMRect(0, 0, 1000, 600);
+    const fallbackRect = new DOMRect(40, 80, 500, 160);
+    const lineRects = [
+      new DOMRect(40, 100, 420, 28),
+      new DOMRect(40, 148, 520, 28),
+    ];
+
+    expect(
+      isMarqueeBlockHit({
+        selectionRect: new DOMRect(820, 150, 120, 20),
+        fallbackRect,
+        lineRects,
+        hitAreaRect,
+      }),
+    ).toBe(true);
+
+    expect(
+      isMarqueeBlockHit({
+        selectionRect: new DOMRect(0, 150, 20, 20),
+        fallbackRect,
+        lineRects,
+        hitAreaRect,
+      }),
+    ).toBe(false);
+
+    expect(
+      isMarqueeBlockHit({
+        selectionRect: new DOMRect(820, 210, 120, 20),
+        fallbackRect,
+        lineRects,
+        hitAreaRect,
+      }),
+    ).toBe(false);
+  });
+
+  it('hits image blocks by their block rectangle when no text rows exist', () => {
+    expect(
+      isMarqueeBlockHit({
+        selectionRect: new DOMRect(700, 120, 160, 140),
+        fallbackRect: new DOMRect(80, 100, 780, 180),
+        lineRects: [],
+        hitAreaRect: new DOMRect(0, 0, 1000, 600),
+      }),
+    ).toBe(true);
+  });
+
+  it('collects one shared marquee hit list for highlights and selection', () => {
+    const editor = document.createElement('div');
+    const first = document.createElement('p');
+    const second = document.createElement('p');
+    const third = document.createElement('p');
+    editor.append(first, second, third);
+
+    first.getBoundingClientRect = () => new DOMRect(40, 40, 320, 28);
+    second.getBoundingClientRect = () => new DOMRect(40, 84, 520, 28);
+    third.getBoundingClientRect = () => new DOMRect(40, 128, 520, 28);
+
+    const hits = collectMarqueeHits({
+      editorRoot: editor,
+      editorRect: new DOMRect(0, 0, 900, 400),
+      selectionRect: new DOMRect(460, 30, 300, 120),
+      hitAreaRect: new DOMRect(0, 0, 900, 400),
+    });
+
+    expect(hits.map((hit) => hit.block)).toEqual([first, second, third]);
+    expect(hits.flatMap((hit) => hit.highlightRects)).toEqual([
+      { left: 40, top: 40, width: 320, height: 28 },
+      { left: 40, top: 84, width: 520, height: 28 },
+      { left: 40, top: 128, width: 520, height: 28 },
+    ]);
+  });
+
+  it('maps marquee DOM block order to top-level document node ranges', () => {
+    const editor = document.createElement('div');
+    const first = document.createElement('p');
+    const overlay = document.createElement('div');
+    const second = document.createElement('p');
+    const third = document.createElement('p');
+    overlay.className = 'editor-marquee-selection';
+    editor.append(first, overlay, second, third);
+
+    expect(
+      resolveMarqueeDomBlockRange({
+        editorRoot: editor,
+        block: first,
+        nodeSizes: [8, 12, 10],
+        docSize: 30,
+      }),
+    ).toEqual({ from: 0, to: 8 });
+    expect(
+      resolveMarqueeDomBlockRange({
+        editorRoot: editor,
+        block: second,
+        nodeSizes: [8, 12, 10],
+        docSize: 30,
+      }),
+    ).toEqual({ from: 8, to: 20 });
+    expect(
+      resolveMarqueeDomBlockRange({
+        editorRoot: editor,
+        block: third,
+        nodeSizes: [8, 12, 10],
+        docSize: 30,
+      }),
+    ).toEqual({ from: 20, to: 30 });
+  });
+
+  it('rejects document-start positions for non-first marquee blocks', () => {
+    const editor = document.createElement('div');
+    const first = document.createElement('p');
+    const second = document.createElement('p');
+    const third = document.createElement('p');
+    const overlay = document.createElement('div');
+    overlay.className = 'editor-marquee-selection';
+    editor.append(first, overlay, second, third);
+
+    expect(
+      isSuspiciousMarqueeStartPosition({
+        editorRoot: editor,
+        block: first,
+        start: 0,
+      }),
+    ).toBe(false);
+    expect(
+      isSuspiciousMarqueeStartPosition({
+        editorRoot: editor,
+        block: second,
+        start: 0,
+      }),
+    ).toBe(true);
+    expect(
+      isSuspiciousMarqueeStartPosition({
+        editorRoot: editor,
+        block: second,
+        start: 18,
+      }),
+    ).toBe(false);
+  });
+
+  it('collapses an existing selection when a blank marquee click does not drag', () => {
+    expect(
+      resolveMarqueeClearPosition({
+        docSize: 100,
+        currentFrom: 12,
+        currentTo: 42,
+        clickPosition: 140,
+      }),
+    ).toBe(100);
+
+    expect(
+      resolveMarqueeClearPosition({
+        docSize: 100,
+        currentFrom: 12,
+        currentTo: 42,
+      }),
+    ).toBe(42);
+
+    expect(
+      resolveMarqueeClearPosition({
+        docSize: 100,
+        currentFrom: 42,
+        currentTo: 42,
+        clickPosition: 12,
+      }),
+    ).toBeUndefined();
   });
 });
