@@ -62,3 +62,17 @@ export interface ServerProfile {
   baseUrl: string;
   lastConnectedAt: string;
 }
+
+export interface DesktopSettings {
+  dataDir: string;
+  port: number;
+  launchAtLogin: boolean;
+}
+
+export interface DesktopServerStatus {
+  localUrl: string;
+  lanUrls: string[];
+  dataDir: string;
+  port: number;
+  startedByDesktop: boolean;
+}

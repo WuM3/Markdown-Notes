@@ -11,31 +11,36 @@ npm install
 Copy-Item .env.example .env
 npm run build
 .\scripts\start.ps1
+```
 
 手动启动
 
+```powershell
 npm install
 npm run build
 npm start
+```
 
 启动成功后浏览器访问：
 
+```text
 http://localhost:3210
+```
 
 验证是否安装成功：
 
+```powershell
 Get-ScheduledTask -TaskName PersonalMarkdownNotes
-
+```
 
 如果能看到任务，说明开机登录后会自动启动。你也可以手动启动它：
 
+```powershell
 Start-ScheduledTask -TaskName PersonalMarkdownNotes
-
-
-npm run dev：开发用，网页地址通常是 http://localhost:5173，后端是 3211。
-npm start：正式使用，网页和 API 都在 http://localhost:3210。
-
 ```
+
+- `npm run dev`：开发用，网页地址通常是 `http://localhost:5173`，后端是 `3211`。
+- `npm start`：正式使用，网页和 API 都在 `http://localhost:3210`。
 
 浏览器访问：
 
@@ -47,6 +52,32 @@ npm start：正式使用，网页和 API 都在 http://localhost:3210。
 ```powershell
 .\scripts\allow-firewall.ps1
 ```
+
+## Windows 桌面版
+
+Windows 桌面版使用 Electron 封装现有网页，双击程序会自动启动本机笔记服务并打开独立窗口。服务仍监听 `0.0.0.0:3210`，手机、平板和其他电脑可以继续通过局域网 IP 访问。
+
+开发运行：
+
+```powershell
+npm run desktop:dev
+```
+
+生成 Windows 安装包：
+
+```powershell
+npm run desktop:dist
+```
+
+安装包输出到：
+
+```text
+dist-desktop/
+```
+
+首次启动桌面版时选择现有 `data` 数据目录；程序会记住该目录，不会迁移或复制笔记。关闭窗口会销毁窗口并释放页面内存，但托盘和本机服务会继续运行；托盘菜单可以重新打开窗口、复制局域网地址、更换数据目录、设置开机自动启动或退出程序。
+
+如果端口 `3210` 已有兼容的个人笔记服务，桌面版会直接连接它；如果该端口被其他程序占用，会提示错误。更换数据目录后需要从托盘退出并重新打开桌面版才会生效。
 
 ## 开机自动运行
 
