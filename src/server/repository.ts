@@ -3,6 +3,7 @@ import {
   mkdir,
   readFile,
   readdir,
+  lstat,
   rename,
   rm,
   stat,
@@ -61,6 +62,31 @@ export class RevisionConflictError extends Error {
   constructor(public readonly current: DocumentRecord) {
     super('文档已在其他位置更新');
     this.name = 'RevisionConflictError';
+  }
+}
+
+export class RepositoryError extends Error {
+  constructor(
+    public readonly statusCode: number,
+    public readonly code: string,
+    message: string,
+  ) {
+    super(message);
+    this.name = 'RepositoryError';
+  }
+}
+
+export class NotFoundError extends RepositoryError {
+  constructor(message = '资源不存在') {
+    super(404, 'NOT_FOUND', message);
+    this.name = 'NotFoundError';
+  }
+}
+
+export class ValidationError extends RepositoryError {
+  constructor(message: string) {
+    super(400, 'BAD_REQUEST', message);
+    this.name = 'ValidationError';
   }
 }
 
@@ -137,7 +163,7 @@ export class NotesRepository {
       relativePath = this.documentPaths.get(id);
     }
     if (!relativePath) {
-      throw new Error('文档不存在');
+      throw new NotFoundError('文档不存在');
     }
 
     const source = await readFile(
@@ -184,6 +210,7 @@ export class NotesRepository {
     const sourcePath = toSafeRelativePath(input.path);
     const targetParentPath = toSafeRelativePath(input.targetParentPath);
     const source = await resolveExistingWithin(this.notesDir, sourcePath);
+    await this.requireNodeKind(source, input.kind);
     const targetParent = resolveWithin(this.notesDir, targetParentPath);
     await this.requireDirectory(targetParent);
 
@@ -242,6 +269,7 @@ export class NotesRepository {
     const document = await this.getDocument(documentId);
     const parent = resolveWithin(this.notesDir, document.parentPath);
     const assetDir = path.join(parent, '.assets', documentId);
+    await this.requireWritablePathWithin(this.notesDir, assetDir);
     await mkdir(assetDir, { recursive: true });
 
     const parsed = path.parse(sanitizeNodeName(fileName));
@@ -270,6 +298,7 @@ export class NotesRepository {
   async deleteNode(input: DeleteNodeInput): Promise<TrashEntry> {
     const sourcePath = toSafeRelativePath(input.path);
     const source = await resolveExistingWithin(this.notesDir, sourcePath);
+    await this.requireNodeKind(source, input.kind);
     const id = randomUUID();
     const trashItemDir = path.join(this.trashDir, id);
     await mkdir(trashItemDir, { recursive: true });
@@ -278,15 +307,6 @@ export class NotesRepository {
     if (input.kind === 'document') {
       const document = await this.documentAtPath(sourcePath);
       documentId = document.id;
-      await rename(source, path.join(trashItemDir, 'item.md'));
-      const sourceAssets = path.join(path.dirname(source), '.assets', document.id);
-      if (await this.exists(sourceAssets)) {
-        await rename(sourceAssets, path.join(trashItemDir, 'assets'));
-      }
-      this.documentPaths.delete(document.id);
-    } else {
-      await rename(source, path.join(trashItemDir, 'content'));
-      await this.rebuildDocumentMap();
     }
 
     const entry: TrashEntry = {
@@ -302,6 +322,19 @@ export class NotesRepository {
       JSON.stringify(entry, null, 2),
       'utf8',
     );
+
+    if (input.kind === 'document') {
+      const document = await this.documentAtPath(sourcePath);
+      await rename(source, path.join(trashItemDir, 'item.md'));
+      const sourceAssets = path.join(path.dirname(source), '.assets', document.id);
+      if (await this.exists(sourceAssets)) {
+        await rename(sourceAssets, path.join(trashItemDir, 'assets'));
+      }
+      this.documentPaths.delete(document.id);
+    } else {
+      await rename(source, path.join(trashItemDir, 'content'));
+      await this.rebuildDocumentMap();
+    }
     return entry;
   }
 
@@ -311,14 +344,19 @@ export class NotesRepository {
     for (const entry of entries) {
       if (!entry.isDirectory()) continue;
       try {
-        result.push(
-          JSON.parse(
-            await readFile(
-              path.join(this.trashDir, entry.name, 'metadata.json'),
-              'utf8',
-            ),
-          ) as TrashEntry,
-        );
+        const trashItemDir = await resolveExistingWithin(this.trashDir, entry.name);
+        const trashEntry = JSON.parse(
+          await readFile(
+            path.join(trashItemDir, 'metadata.json'),
+            'utf8',
+          ),
+        ) as TrashEntry;
+        const contentPath =
+          trashEntry.kind === 'document'
+            ? path.join(trashItemDir, 'item.md')
+            : path.join(trashItemDir, 'content');
+        if (!(await this.exists(contentPath))) continue;
+        result.push(trashEntry);
       } catch {
         // Ignore incomplete trash entries left by interrupted filesystem operations.
       }
@@ -327,7 +365,7 @@ export class NotesRepository {
   }
 
   async restoreTrash(id: string): Promise<TreeNode | DocumentRecord> {
-    const trashItemDir = resolveWithin(this.trashDir, id);
+    const trashItemDir = await resolveExistingWithin(this.trashDir, id);
     const entry = JSON.parse(
       await readFile(path.join(trashItemDir, 'metadata.json'), 'utf8'),
     ) as TrashEntry;
@@ -378,7 +416,10 @@ export class NotesRepository {
   }
 
   async permanentlyDeleteTrash(id: string): Promise<void> {
-    await rm(resolveWithin(this.trashDir, id), { recursive: true, force: true });
+    await rm(await resolveExistingWithin(this.trashDir, id), {
+      recursive: true,
+      force: true,
+    });
   }
 
   async emptyTrash(): Promise<void> {
@@ -386,9 +427,15 @@ export class NotesRepository {
     await Promise.all(
       entries
         .filter((entry) => entry.isDirectory())
-        .map((entry) =>
-          rm(path.join(this.trashDir, entry.name), { recursive: true, force: true }),
-        ),
+        .map(async (entry) => {
+          const target = path.join(this.trashDir, entry.name);
+          const info = await lstat(target);
+          if (info.isSymbolicLink()) {
+            await rm(target, { force: true });
+            return;
+          }
+          await rm(target, { recursive: true, force: true });
+        }),
     );
   }
 
@@ -571,8 +618,37 @@ export class NotesRepository {
       await resolveExistingWithin(this.notesDir, relativePath),
     );
     if (!result.isDirectory()) {
-      throw new Error('目录不存在');
+      throw new NotFoundError('目录不存在');
     }
+  }
+
+  private async requireNodeKind(
+    absolutePath: string,
+    expectedKind: NodeKind,
+  ): Promise<void> {
+    const info = await stat(absolutePath);
+    const matches =
+      expectedKind === 'folder'
+        ? info.isDirectory()
+        : info.isFile() && absolutePath.toLowerCase().endsWith('.md');
+    if (!matches) {
+      throw new ValidationError('节点类型不匹配');
+    }
+  }
+
+  private async requireWritablePathWithin(root: string, target: string): Promise<void> {
+    const resolvedRoot = path.resolve(root);
+    let existing = path.resolve(target);
+    while (!(await this.exists(existing))) {
+      const parent = path.dirname(existing);
+      if (parent === existing) break;
+      existing = parent;
+    }
+    const relativePath = path
+      .relative(resolvedRoot, existing)
+      .split(path.sep)
+      .join('/');
+    await resolveExistingWithin(resolvedRoot, relativePath);
   }
 
   private async exists(target: string): Promise<boolean> {

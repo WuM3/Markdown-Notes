@@ -7,6 +7,7 @@ export type { DesktopSettings };
 export interface DesktopSettingsState {
   exists: boolean;
   settings: DesktopSettings;
+  loadError?: string;
 }
 
 export const desktopSettingsFileName = 'desktop-settings.json';
@@ -36,7 +37,11 @@ export async function loadDesktopSettings(
     if (isMissingFile(error)) {
       return { exists: false, settings: fallback };
     }
-    return { exists: true, settings: fallback };
+    return {
+      exists: true,
+      settings: fallback,
+      loadError: `${desktopSettingsFileName} 无法读取，已使用默认设置。`,
+    };
   }
 }
 

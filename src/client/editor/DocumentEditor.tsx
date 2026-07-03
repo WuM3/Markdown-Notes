@@ -56,14 +56,29 @@ export function DocumentEditor({
   onConflict,
   onOpenSidebar,
 }: DocumentEditorProps) {
-  const [title, setTitle] = useState(document.title);
+  const documentSyncKey = `${document.id}:${document.revision}`;
+  const [titleState, setTitleState] = useState(() => ({
+    syncKey: documentSyncKey,
+    value: document.title,
+  }));
+  const [outlineState, setOutlineState] = useState(() => ({
+    syncKey: documentSyncKey,
+    headings: parseMarkdownHeadings(document.content),
+  }));
   const [status, setStatus] = useState<SaveStatus>('saved');
   const [outlineOpen, setOutlineOpen] = useState(false);
   const [outlineCollapsed, setOutlineCollapsed] = useState(false);
   const [activeHeadingId, setActiveHeadingId] = useState<string>();
-  const [outlineHeadings, setOutlineHeadings] = useState(() =>
-    parseMarkdownHeadings(document.content),
-  );
+  let title = titleState.value;
+  let outlineHeadings = outlineState.headings;
+  if (titleState.syncKey !== documentSyncKey) {
+    title = document.title;
+    setTitleState({ syncKey: documentSyncKey, value: document.title });
+  }
+  if (outlineState.syncKey !== documentSyncKey) {
+    outlineHeadings = parseMarkdownHeadings(document.content);
+    setOutlineState({ syncKey: documentSyncKey, headings: outlineHeadings });
+  }
   const editorRef = useRef<MarkdownEditorHandle>(null);
   const editorScrollRef = useRef<HTMLDivElement>(null);
   const imageInputRef = useRef<HTMLInputElement>(null);
@@ -77,6 +92,12 @@ export function DocumentEditor({
     [outlineHeadings],
   );
   const documentCanvasRef = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    revisionRef.current = document.revision;
+    titleRef.current = title;
+    markdownRef.current = document.content;
+  }, [document.content, document.revision, title]);
 
   useEffect(() => {
     const scroller = editorScrollRef.current;
@@ -145,10 +166,20 @@ export function DocumentEditor({
     });
     saverRef.current = saver;
     return () => {
-      saver.cancel();
+      void saver.flushNow();
       saverRef.current = undefined;
     };
   }, [document.id, onConflict, onSaved]);
+
+  useEffect(() => {
+    const handleBeforeUnload = (event: BeforeUnloadEvent) => {
+      if (!saverRef.current?.hasPendingWork()) return;
+      event.preventDefault();
+      event.returnValue = '';
+    };
+    window.addEventListener('beforeunload', handleBeforeUnload);
+    return () => window.removeEventListener('beforeunload', handleBeforeUnload);
+  }, []);
 
   function scheduleSave() {
     saverRef.current?.schedule({
@@ -159,14 +190,17 @@ export function DocumentEditor({
 
   function handleTitleChange(event: ChangeEvent<HTMLInputElement>) {
     const nextTitle = event.target.value;
-    setTitle(nextTitle);
+    setTitleState({ syncKey: documentSyncKey, value: nextTitle });
     titleRef.current = nextTitle;
     scheduleSave();
   }
 
   function handleMarkdownChange(markdown: string) {
     markdownRef.current = markdown;
-    setOutlineHeadings(parseMarkdownHeadings(markdown));
+    setOutlineState({
+      syncKey: documentSyncKey,
+      headings: parseMarkdownHeadings(markdown),
+    });
     scheduleSave();
   }
 

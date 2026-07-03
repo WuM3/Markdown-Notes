@@ -202,10 +202,16 @@ export async function buildApp(options: BuildAppOptions): Promise<FastifyInstanc
     }
 
     if (!documentId || !upload) {
-      return reply.code(400).send({ message: '缺少文档或附件' });
+      return reply.code(400).send({
+        code: 'BAD_REQUEST',
+        message: '缺少文档或附件',
+      });
     }
     if (upload.mimeType.startsWith('image/') && upload.data.byteLength > imageLimitBytes) {
-      return reply.code(413).send({ message: '图片超过大小限制' });
+      return reply.code(413).send({
+        code: 'PAYLOAD_TOO_LARGE',
+        message: '图片超过大小限制',
+      });
     }
 
     const asset = await repository.writeAsset(
@@ -285,7 +291,10 @@ export async function buildApp(options: BuildAppOptions): Promise<FastifyInstanc
     });
     app.setNotFoundHandler(async (request, reply) => {
       if (request.url.startsWith('/api/')) {
-        return reply.code(404).send({ message: '接口不存在' });
+        return reply.code(404).send({
+          code: 'NOT_FOUND',
+          message: '接口不存在',
+        });
       }
       return reply.type('text/html').send(await readFile(path.join(staticDir, 'index.html')));
     });
@@ -302,8 +311,18 @@ export async function buildApp(options: BuildAppOptions): Promise<FastifyInstanc
         : undefined;
     const statusCode =
       errorStatus && errorStatus >= 400 ? errorStatus : 500;
+    const code =
+      typeof error === 'object' &&
+      error !== null &&
+      'code' in error &&
+      typeof error.code === 'string'
+        ? error.code
+        : statusCode === 500
+          ? 'INTERNAL_ERROR'
+          : 'REQUEST_ERROR';
     const message = error instanceof Error ? error.message : '未知错误';
     reply.code(statusCode).send({
+      code,
       message: statusCode === 500 ? '服务器处理请求失败' : message,
     });
   });

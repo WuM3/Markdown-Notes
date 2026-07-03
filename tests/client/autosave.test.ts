@@ -70,4 +70,55 @@ describe('DebouncedSaver', () => {
 
     expect(save).toHaveBeenCalledTimes(1);
   });
+
+  it('saves changes queued while another save is still running', async () => {
+    vi.useFakeTimers();
+    let resolveFirstSave: (() => void) | undefined;
+    const save = vi
+      .fn()
+      .mockImplementationOnce(
+        () =>
+          new Promise<void>((resolve) => {
+            resolveFirstSave = resolve;
+          }),
+      )
+      .mockResolvedValueOnce(undefined);
+    const statuses: string[] = [];
+    const saver = new DebouncedSaver({
+      delay: 800,
+      retryDelay: 2_000,
+      save,
+      onStatus: (status) => statuses.push(status),
+    });
+
+    saver.schedule({ content: 'first' });
+    await vi.advanceTimersByTimeAsync(800);
+    saver.schedule({ content: 'latest' });
+    await vi.advanceTimersByTimeAsync(800);
+    expect(save).toHaveBeenCalledTimes(1);
+
+    resolveFirstSave?.();
+    await vi.runAllTimersAsync();
+
+    expect(save).toHaveBeenCalledTimes(2);
+    expect(save).toHaveBeenLastCalledWith({ content: 'latest' });
+    expect(statuses.at(-1)).toBe('saved');
+  });
+
+  it('flushes pending changes immediately when requested', async () => {
+    vi.useFakeTimers();
+    const save = vi.fn().mockResolvedValue(undefined);
+    const saver = new DebouncedSaver({
+      delay: 800,
+      retryDelay: 2_000,
+      save,
+      onStatus: vi.fn(),
+    });
+
+    saver.schedule({ content: 'draft' });
+    await saver.flushNow();
+
+    expect(save).toHaveBeenCalledTimes(1);
+    expect(save).toHaveBeenCalledWith({ content: 'draft' });
+  });
 });

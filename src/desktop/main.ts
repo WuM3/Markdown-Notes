@@ -68,6 +68,13 @@ async function startDesktopApp(): Promise<void> {
     dataDir: defaultDataDir(),
   });
   settings = state.settings;
+  if (state.loadError) {
+    await dialog.showMessageBox({
+      type: 'warning',
+      message: '桌面设置读取失败',
+      detail: state.loadError,
+    });
+  }
 
   if (!state.exists || !(await pathExists(settings.dataDir))) {
     const chosenDataDir = await chooseDataDirectory(settings.dataDir);

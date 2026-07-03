@@ -36,6 +36,7 @@ const documentRecord = {
 describe('App', () => {
   afterEach(() => {
     cleanup();
+    vi.useRealTimers();
     vi.restoreAllMocks();
   });
 
@@ -156,6 +157,84 @@ describe('App', () => {
 
     expect(screen.getByRole('button', { name: '笔记' })).toHaveClass('active');
     expect(ref.current?.handleBack()).toBe(false);
+  });
+
+  it('keeps the newly opened document when a previous document finishes saving late', async () => {
+    const user = userEvent.setup();
+    const firstDocument = { ...documentRecord, id: 'doc-1', title: '第一篇' };
+    const secondDocument = {
+      ...documentRecord,
+      id: 'doc-2',
+      title: '第二篇',
+      path: '科研/第二篇.md',
+      revision: 'revision-2',
+      content: '第二篇正文',
+    };
+    let resolveFirstSave: ((value: Response) => void) | undefined;
+    vi.spyOn(globalThis, 'fetch').mockImplementation(async (input, init) => {
+      const url = String(input);
+      if (url === '/api/tree') {
+        return jsonResponse([
+          {
+            id: 'folder:科研',
+            kind: 'folder',
+            name: '科研',
+            path: '科研',
+            updatedAt: documentRecord.updatedAt,
+            children: [
+              {
+                id: firstDocument.id,
+                kind: 'document',
+                name: firstDocument.title,
+                path: firstDocument.path,
+                updatedAt: firstDocument.updatedAt,
+              },
+              {
+                id: secondDocument.id,
+                kind: 'document',
+                name: secondDocument.title,
+                path: secondDocument.path,
+                updatedAt: secondDocument.updatedAt,
+              },
+            ],
+          },
+        ]);
+      }
+      if (url === '/api/documents/doc-1' && init?.method !== 'PUT') {
+        return jsonResponse(firstDocument);
+      }
+      if (url === '/api/documents/doc-2') {
+        return jsonResponse(secondDocument);
+      }
+      if (url === '/api/documents/doc-1' && init?.method === 'PUT') {
+        return new Promise<Response>((resolve) => {
+          resolveFirstSave = resolve;
+        });
+      }
+      throw new Error(`Unexpected request: ${url}`);
+    });
+
+    render(<App />);
+    await user.click(await screen.findByText('第一篇'));
+    await user.clear(screen.getByLabelText('文档标题'));
+    await user.type(screen.getByLabelText('文档标题'), '第一篇草稿');
+    await user.click(screen.getByText('第二篇'));
+    await screen.findByDisplayValue('第二篇');
+
+    resolveFirstSave?.(
+      jsonResponse({
+        ...firstDocument,
+        title: '第一篇草稿',
+        revision: 'revision-saved',
+      }),
+    );
+    await waitFor(() =>
+      expect(
+        vi.mocked(globalThis.fetch).mock.calls.filter(([url]) => url === '/api/tree'),
+      ).toHaveLength(2),
+    );
+
+    expect(screen.getByLabelText('文档标题')).toHaveValue('第二篇');
   });
 });
 

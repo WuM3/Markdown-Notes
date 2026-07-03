@@ -42,6 +42,15 @@ describe('ApiClient', () => {
     } satisfies Partial<ApiError>);
   });
 
+  it('returns undefined for empty 204 responses', async () => {
+    const client = new ApiClient({
+      target: 'web',
+      fetcher: vi.fn().mockResolvedValue(new Response(null, { status: 204 })),
+    });
+
+    await expect(client.request<void>('/trash/doc-1')).resolves.toBeUndefined();
+  });
+
   it('reads the current global fetch implementation at request time', async () => {
     const client = new ApiClient({ target: 'web' });
     const fetcher = vi.spyOn(globalThis, 'fetch').mockResolvedValue(

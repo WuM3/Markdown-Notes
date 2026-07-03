@@ -24,21 +24,30 @@ export function ActionDialog({
 }: ActionDialogProps) {
   const [value, setValue] = useState(defaultValue);
   const [submitting, setSubmitting] = useState(false);
+  const [error, setError] = useState('');
 
   async function handleSubmit(event: FormEvent) {
     event.preventDefault();
     if (!value.trim() || submitting) return;
     setSubmitting(true);
+    setError('');
     try {
       await onSubmit(value.trim());
       onOpenChange(false);
+    } catch (reason) {
+      setError(messageForError(reason));
     } finally {
       setSubmitting(false);
     }
   }
 
+  function handleOpenChange(nextOpen: boolean) {
+    if (!nextOpen) setError('');
+    onOpenChange(nextOpen);
+  }
+
   return (
-    <AlertDialog.Root open={open} onOpenChange={onOpenChange}>
+    <AlertDialog.Root open={open} onOpenChange={handleOpenChange}>
       <AlertDialog.Portal>
         <AlertDialog.Overlay className="dialog-overlay" />
         <AlertDialog.Content className="dialog-content">
@@ -53,6 +62,11 @@ export function ActionDialog({
                 onChange={(event) => setValue(event.target.value)}
               />
             </label>
+            {error && (
+              <div className="dialog-error" role="alert">
+                {error}
+              </div>
+            )}
             <div className="dialog-actions">
               <AlertDialog.Cancel asChild>
                 <button type="button" className="button secondary">
@@ -90,24 +104,38 @@ export function ConfirmDialog({
   onConfirm,
 }: ConfirmDialogProps) {
   const [submitting, setSubmitting] = useState(false);
+  const [error, setError] = useState('');
 
   async function handleConfirm() {
     setSubmitting(true);
+    setError('');
     try {
       await onConfirm();
       onOpenChange(false);
+    } catch (reason) {
+      setError(messageForError(reason));
     } finally {
       setSubmitting(false);
     }
   }
 
+  function handleOpenChange(nextOpen: boolean) {
+    if (!nextOpen) setError('');
+    onOpenChange(nextOpen);
+  }
+
   return (
-    <AlertDialog.Root open={open} onOpenChange={onOpenChange}>
+    <AlertDialog.Root open={open} onOpenChange={handleOpenChange}>
       <AlertDialog.Portal>
         <AlertDialog.Overlay className="dialog-overlay" />
         <AlertDialog.Content className="dialog-content">
           <AlertDialog.Title>{title}</AlertDialog.Title>
           <AlertDialog.Description>{description}</AlertDialog.Description>
+          {error && (
+            <div className="dialog-error" role="alert">
+              {error}
+            </div>
+          )}
           <div className="dialog-actions">
             <AlertDialog.Cancel asChild>
               <button type="button" className="button secondary">
@@ -127,4 +155,8 @@ export function ConfirmDialog({
       </AlertDialog.Portal>
     </AlertDialog.Root>
   );
+}
+
+function messageForError(error: unknown): string {
+  return error instanceof Error ? error.message : '操作失败';
 }

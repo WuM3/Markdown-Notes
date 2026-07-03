@@ -1,4 +1,12 @@
-import { mkdtemp, readFile, stat } from 'node:fs/promises';
+import {
+  mkdir,
+  mkdtemp,
+  readFile,
+  rm,
+  stat,
+  symlink,
+  writeFile,
+} from 'node:fs/promises';
 import os from 'node:os';
 import path from 'node:path';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
@@ -123,6 +131,112 @@ describe('NotesRepository', () => {
     ).toBe('image');
   });
 
+  it('rejects asset writes that would escape through an existing link', async () => {
+    const document = await repository.createDocument({
+      parentPath: '',
+      title: '链接附件',
+    });
+    const outside = await mkdtemp(path.join(os.tmpdir(), 'lan-notes-assets-outside-'));
+    await symlink(outside, path.join(dataDir, 'notes', '.assets'), 'junction');
+
+    try {
+      await expect(
+        repository.writeAsset(document.id, 'image.png', Buffer.from('image')),
+      ).rejects.toThrow('符号链接超出数据目录');
+      await expect(
+        stat(path.join(outside, document.id, 'image.png')),
+      ).rejects.toThrow();
+    } finally {
+      await rm(outside, { recursive: true, force: true });
+    }
+  });
+
+  it('rejects trash restore entries that escape through an existing link', async () => {
+    const outside = await mkdtemp(path.join(os.tmpdir(), 'lan-notes-trash-outside-'));
+    await writeFile(
+      path.join(outside, 'metadata.json'),
+      JSON.stringify({
+        id: 'linked-trash',
+        kind: 'document',
+        name: '外部条目',
+        originalPath: '外部条目.md',
+        deletedAt: '2026-06-25T08:00:00.000Z',
+        documentId: 'external-doc',
+      }),
+      'utf8',
+    );
+    await writeFile(path.join(outside, 'item.md'), 'outside', 'utf8');
+    await symlink(outside, path.join(dataDir, '.trash', 'linked-trash'), 'junction');
+
+    try {
+      await expect(repository.restoreTrash('linked-trash')).rejects.toThrow(
+        '符号链接超出数据目录',
+      );
+      await expect(readFile(path.join(outside, 'item.md'), 'utf8')).resolves.toBe(
+        'outside',
+      );
+    } finally {
+      await rm(outside, { recursive: true, force: true });
+    }
+  });
+
+  it('hides incomplete trash entries without moved content', async () => {
+    const trashItemDir = path.join(dataDir, '.trash', 'metadata-only');
+    await mkdir(trashItemDir, { recursive: true });
+    await writeFile(
+      path.join(trashItemDir, 'metadata.json'),
+      JSON.stringify({
+        id: 'metadata-only',
+        kind: 'document',
+        name: '未完成删除',
+        originalPath: '未完成删除.md',
+        deletedAt: '2026-06-25T08:00:00.000Z',
+        documentId: 'missing-doc',
+      }),
+      'utf8',
+    );
+
+    await expect(repository.listTrash()).resolves.toEqual([]);
+  });
+
+  it('writes trash metadata before moving document content', async () => {
+    const document = await repository.createDocument({
+      parentPath: '',
+      title: '可见删除',
+    });
+
+    const entry = await repository.deleteNode({
+      kind: 'document',
+      path: document.path,
+    });
+
+    const metadata = JSON.parse(
+      await readFile(
+        path.join(dataDir, '.trash', entry.id, 'metadata.json'),
+        'utf8',
+      ),
+    ) as { id: string };
+    expect(metadata.id).toBe(entry.id);
+    await expect(repository.listTrash()).resolves.toEqual([
+      expect.objectContaining({ id: entry.id }),
+    ]);
+  });
+
+  it('rejects node operations when the requested kind does not match the path', async () => {
+    const document = await repository.createDocument({
+      parentPath: '',
+      title: '类型校验',
+    });
+
+    await expect(
+      repository.deleteNode({ kind: 'folder', path: document.path }),
+    ).rejects.toThrow('节点类型不匹配');
+    await expect(repository.getDocument(document.id)).resolves.toMatchObject({
+      id: document.id,
+      path: document.path,
+    });
+  });
+
   it('soft deletes and restores documents to a numbered path on collision', async () => {
     const document = await repository.createDocument({
       parentPath: '',
@@ -142,4 +256,3 @@ describe('NotesRepository', () => {
     expect((await repository.getDocument(document.id)).path).toBe('可恢复 (2).md');
   });
 });
-

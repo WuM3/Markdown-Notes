@@ -62,6 +62,12 @@ export class ApiClient {
       this.apiUrl(path),
       init,
     );
+    if (response.status === 204) {
+      if (!response.ok) {
+        throw new ApiError(response.status, undefined);
+      }
+      return undefined as T;
+    }
     const contentType = response.headers.get('content-type') ?? '';
     const body = contentType.includes('application/json')
       ? await response.json()

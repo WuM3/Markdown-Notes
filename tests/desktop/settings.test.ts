@@ -1,4 +1,4 @@
-import { mkdir, mkdtemp, readFile, rm } from 'node:fs/promises';
+import { mkdir, mkdtemp, readFile, rm, writeFile } from 'node:fs/promises';
 import os from 'node:os';
 import path from 'node:path';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
@@ -56,6 +56,21 @@ describe('desktop settings', () => {
       launchAtLogin: true,
     });
     expect(raw).toMatchObject({ dataDir: path.resolve(dataDir) });
+  });
+
+  it('reports a settings file parse error instead of silently falling back', async () => {
+    const dataDir = path.join(tempDir, 'fallback-data');
+    await writeFile(
+      path.join(tempDir, desktopSettingsFileName),
+      '{ invalid json',
+      'utf8',
+    );
+
+    const state = await loadDesktopSettings(tempDir, { dataDir });
+
+    expect(state.exists).toBe(true);
+    expect(state.loadError).toContain('desktop-settings.json');
+    expect(state.settings.dataDir).toBe(path.resolve(dataDir));
   });
 
   it('creates the notes and trash folders for a chosen data directory', async () => {

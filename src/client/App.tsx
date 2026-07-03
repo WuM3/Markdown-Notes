@@ -105,7 +105,7 @@ export const App = forwardRef<AppHandle, AppProps>(function App(
 
   const handleSaved = useCallback(
     (saved: DocumentRecord) => {
-      setDocument(saved);
+      setDocument((current) => (current?.id === saved.id ? saved : current));
       void reloadTree();
     },
     [reloadTree],

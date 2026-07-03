@@ -58,6 +58,19 @@ describe('Fastify API', () => {
     });
   });
 
+  it('returns a typed 404 when a document does not exist', async () => {
+    const response = await app.inject({
+      method: 'GET',
+      url: '/api/documents/missing-document',
+    });
+
+    expect(response.statusCode).toBe(404);
+    expect(response.json()).toMatchObject({
+      code: 'NOT_FOUND',
+      message: '文档不存在',
+    });
+  });
+
   it('allows Capacitor and local development origins but rejects unrelated browser origins', async () => {
     const capacitor = await app.inject({
       method: 'OPTIONS',
