@@ -203,6 +203,17 @@ describe('block toolbar commands', () => {
     expect(harness.view.dispatch).not.toHaveBeenCalled();
   });
 
+  it('keeps a whitespace-only selection inside non-whitespace text unchanged', () => {
+    const doc = schema.node('doc', undefined, [paragraph('alpha   bravo')]);
+    const harness = createHarness(doc, TextSelection.create(doc, 6, 9));
+
+    applyCodeBlock(harness.ctx as never);
+
+    expect(harness.state.doc.toJSON()).toEqual(doc.toJSON());
+    expect(harness.commands.call).not.toHaveBeenCalled();
+    expect(harness.view.dispatch).not.toHaveBeenCalled();
+  });
+
   it('expands a partial three-paragraph quote selection before calling the wrap command', () => {
     const doc = schema.node('doc', undefined, [
       paragraph('alpha'),

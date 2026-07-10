@@ -78,15 +78,18 @@ export function applyCodeBlock(ctx: Ctx): void {
     return;
   }
 
-  const expandedSelection = expandSelectionToTouchedTextBlocks(selection);
-  const selectedText = state.doc
-    .textBetween(expandedSelection.from, expandedSelection.to, '\n')
+  const originalSelectedText = state.doc
+    .textBetween(selection.from, selection.to, '\n')
     .replace(/\r\n?/g, '\n');
-  if (!selectedText.trim()) {
+  if (!originalSelectedText.trim()) {
     focusEditor(ctx);
     return;
   }
 
+  const expandedSelection = expandSelectionToTouchedTextBlocks(selection);
+  const selectedText = state.doc
+    .textBetween(expandedSelection.from, expandedSelection.to, '\n')
+    .replace(/\r\n?/g, '\n');
   const language = inferCodeBlockLanguage(selectedText);
   const markdown = `\`\`\`${language}\n${selectedText}\n\`\`\`\n`;
   view.dispatch(
