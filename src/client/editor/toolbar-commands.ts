@@ -10,12 +10,28 @@ import {
 } from '@milkdown/kit/preset/commonmark';
 import { lift } from '@milkdown/kit/prose/commands';
 import type { ResolvedPos } from '@milkdown/kit/prose/model';
-import { NodeSelection, TextSelection } from '@milkdown/kit/prose/state';
+import {
+  NodeSelection,
+  type Selection,
+  TextSelection,
+} from '@milkdown/kit/prose/state';
 import type { EditorView } from '@milkdown/kit/prose/view';
 import { markdownToSlice } from '@milkdown/kit/utils';
 import { inferCodeBlockLanguage } from './code-block-language.js';
 
 export type BlockFormat = 'paragraph' | 'h1' | 'h2' | 'h3' | 'h4' | 'h5' | 'code_block';
+
+export function getTouchedTextBlockRange(
+  selection: Selection,
+): { from: number; to: number } | undefined {
+  if (selection.empty) return undefined;
+
+  const from = textBlockContentRange(selection.$from);
+  const to = textBlockContentRange(selection.$to);
+  if (!from || !to) return undefined;
+
+  return { from: from.from, to: to.to };
+}
 
 export function applyBlockFormat(ctx: Ctx, format: BlockFormat): void {
   const commands = ctx.get(commandsCtx);
@@ -105,6 +121,17 @@ function positionInsideNode($from: ResolvedPos, nodeName: string): boolean {
     if ($from.node(depth).type.name === nodeName) return true;
   }
   return false;
+}
+
+function textBlockContentRange(
+  $pos: ResolvedPos,
+): { from: number; to: number } | undefined {
+  for (let depth = $pos.depth; depth > 0; depth -= 1) {
+    if ($pos.node(depth).isTextblock) {
+      return { from: $pos.start(depth), to: $pos.end(depth) };
+    }
+  }
+  return undefined;
 }
 
 function focusEditor(ctx: Ctx): void {
