@@ -10,12 +10,28 @@ import {
 } from '@milkdown/kit/preset/commonmark';
 import { lift } from '@milkdown/kit/prose/commands';
 import type { ResolvedPos } from '@milkdown/kit/prose/model';
-import { NodeSelection, TextSelection } from '@milkdown/kit/prose/state';
+import {
+  NodeSelection,
+  type Selection,
+  TextSelection,
+} from '@milkdown/kit/prose/state';
 import type { EditorView } from '@milkdown/kit/prose/view';
 import { markdownToSlice } from '@milkdown/kit/utils';
 import { inferCodeBlockLanguage } from './code-block-language.js';
 
 export type BlockFormat = 'paragraph' | 'h1' | 'h2' | 'h3' | 'h4' | 'h5' | 'code_block';
+
+export function getTouchedTextBlockRange(
+  selection: Selection,
+): { from: number; to: number } | undefined {
+  if (selection.empty || !(selection instanceof TextSelection)) return undefined;
+
+  const from = textBlockContentRange(selection.$from, 'following');
+  const to = textBlockContentRange(selection.$to, 'preceding');
+  if (!from || !to) return undefined;
+
+  return { from: from.from, to: to.to };
+}
 
 export function applyBlockFormat(ctx: Ctx, format: BlockFormat): void {
   const commands = ctx.get(commandsCtx);
@@ -36,9 +52,24 @@ export function applyBlockFormat(ctx: Ctx, format: BlockFormat): void {
 
 export function toggleBlockquote(ctx: Ctx): void {
   const view = ctx.get(editorViewCtx);
-  if (selectionInsideNode(view.state.selection, 'blockquote')) {
+  const { selection } = view.state;
+  if (selection instanceof TextSelection && !selection.empty) {
+    const selectedText = view.state.doc
+      .textBetween(selection.from, selection.to, '\n')
+      .replace(/\r\n?/g, '\n');
+    if (!selectedText.trim()) {
+      focusEditor(ctx);
+      return;
+    }
+  }
+
+  if (selectionInsideNode(selection, 'blockquote')) {
     lift(view.state, view.dispatch, view);
   } else {
+    const expandedSelection = expandSelectionToTouchedTextBlocks(selection);
+    if (expandedSelection !== selection) {
+      view.dispatch(view.state.tr.setSelection(expandedSelection));
+    }
     ctx.get(commandsCtx).call(wrapInBlockTypeCommand.key, {
       nodeType: blockquoteSchema.type(ctx),
     });
@@ -58,18 +89,23 @@ export function applyCodeBlock(ctx: Ctx): void {
     return;
   }
 
-  const selectedText = state.doc
+  const originalSelectedText = state.doc
     .textBetween(selection.from, selection.to, '\n')
     .replace(/\r\n?/g, '\n');
-  if (!selectedText.trim()) {
+  if (!originalSelectedText.trim()) {
     focusEditor(ctx);
     return;
   }
 
+  const expandedSelection = expandSelectionToTouchedTextBlocks(selection);
+  const selectedText = state.doc
+    .textBetween(expandedSelection.from, expandedSelection.to, '\n')
+    .replace(/\r\n?/g, '\n');
   const language = inferCodeBlockLanguage(selectedText);
   const markdown = `\`\`\`${language}\n${selectedText}\n\`\`\`\n`;
   view.dispatch(
     state.tr
+      .setSelection(expandedSelection)
       .replaceSelection(markdownToSlice(markdown)(ctx))
       .scrollIntoView(),
   );
@@ -105,6 +141,32 @@ function positionInsideNode($from: ResolvedPos, nodeName: string): boolean {
     if ($from.node(depth).type.name === nodeName) return true;
   }
   return false;
+}
+
+function textBlockContentRange(
+  $pos: ResolvedPos,
+  boundaryDirection: 'following' | 'preceding',
+): { from: number; to: number } | undefined {
+  for (let depth = $pos.depth; depth > 0; depth -= 1) {
+    if ($pos.node(depth).isTextblock) {
+      return { from: $pos.start(depth), to: $pos.end(depth) };
+    }
+  }
+
+  const sibling =
+    boundaryDirection === 'following' ? $pos.nodeAfter : $pos.nodeBefore;
+  if (!sibling?.isTextblock) return undefined;
+
+  return boundaryDirection === 'following'
+    ? { from: $pos.pos + 1, to: $pos.pos + sibling.nodeSize - 1 }
+    : { from: $pos.pos - sibling.nodeSize + 1, to: $pos.pos - 1 };
+}
+
+function expandSelectionToTouchedTextBlocks(selection: Selection): Selection {
+  const range = getTouchedTextBlockRange(selection);
+  return range
+    ? TextSelection.create(selection.$from.doc, range.from, range.to)
+    : selection;
 }
 
 function focusEditor(ctx: Ctx): void {
