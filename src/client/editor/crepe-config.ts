@@ -2,7 +2,14 @@ import {
   CrepeFeature,
   type CrepeConfig,
 } from '@milkdown/crepe';
+import type { Ctx } from '@milkdown/kit/ctx';
+import { commandsCtx, editorViewCtx } from '@milkdown/kit/core';
+import { toggleLinkCommand } from '@milkdown/kit/component/link-tooltip';
 import { languages } from '@codemirror/language-data';
+import {
+  applyCodeBlock,
+  toggleBlockquote,
+} from './toolbar-commands.js';
 
 interface BuildCrepeOptionsInput {
   root: Node;
@@ -41,6 +48,20 @@ export function buildCrepeOptions(
       },
       [CrepeFeature.Toolbar]: {
         buildToolbar: (builder) => {
+          const functionGroup = builder.getGroup('function');
+          functionGroup
+            .clear()
+            .addItem('link', toolbarItem('链接', '[]', (ctx) => {
+              ctx.get(commandsCtx).call(toggleLinkCommand.key);
+              focusEditor(ctx);
+            }))
+            .addItem('quote', toolbarItem('引用', '"', (ctx) => {
+              toggleBlockquote(ctx);
+            }))
+            .addItem('code-block', toolbarItem('代码块', '{}', (ctx) => {
+              applyCodeBlock(ctx);
+            }))
+            .addItem('text-color', dropdownItem('颜色', 'A'));
           const group = builder.addGroup('block-tools', '块工具');
           group.addItem('block-format', dropdownItem('格式', '正文'));
         },
@@ -92,9 +113,30 @@ export function buildCrepeOptions(
 }
 
 function dropdownItem(label: string, icon: string) {
+  const iconClass =
+    label === '颜色'
+      ? 'toolbar-text-icon toolbar-dropdown-label toolbar-color-current'
+      : 'toolbar-text-icon toolbar-dropdown-label';
   return {
-    icon: `<span class="toolbar-text-icon toolbar-dropdown-label" data-toolbar-current="${label}">${icon}</span><span class="toolbar-dropdown-caret">⌄</span>`,
+    icon: `<span class="${iconClass}" data-toolbar-current="${label}">${icon}</span><span class="toolbar-dropdown-caret" aria-hidden="true"></span>`,
     active: () => false,
     onRun: undefined,
   };
+}
+
+function toolbarItem(
+  label: string,
+  icon: string,
+  onRun: (ctx: Ctx) => void,
+) {
+  return {
+    icon: `<span class="toolbar-symbol-icon" aria-hidden="true">${icon}</span>`,
+    active: () => false,
+    onRun,
+    label,
+  };
+}
+
+function focusEditor(ctx: Ctx): void {
+  ctx.get(editorViewCtx).focus();
 }

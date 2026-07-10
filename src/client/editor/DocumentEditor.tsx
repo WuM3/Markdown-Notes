@@ -10,7 +10,9 @@ import * as DropdownMenu from '@radix-ui/react-dropdown-menu';
 import {
   AlertCircle,
   Check,
+  Download,
   FileUp,
+  FileText,
   Highlighter,
   ImagePlus,
   ListTree,
@@ -20,7 +22,9 @@ import {
   Plus,
 } from 'lucide-react';
 import type { DocumentRecord } from '../../shared/types.js';
+import type { ExportFormat } from '../../shared/types.js';
 import { ApiError, notesApi } from '../api.js';
+import { downloadCurrentDocument } from '../export/download-document.js';
 import { DebouncedSaver, type SaveStatus } from './autosave.js';
 import {
   MarkdownEditor,
@@ -69,6 +73,8 @@ export function DocumentEditor({
   const [outlineOpen, setOutlineOpen] = useState(false);
   const [outlineCollapsed, setOutlineCollapsed] = useState(false);
   const [activeHeadingId, setActiveHeadingId] = useState<string>();
+  const [exporting, setExporting] = useState(false);
+  const [exportError, setExportError] = useState('');
   let title = titleState.value;
   let outlineHeadings = outlineState.headings;
   if (titleState.syncKey !== documentSyncKey) {
@@ -85,6 +91,7 @@ export function DocumentEditor({
   const attachmentInputRef = useRef<HTMLInputElement>(null);
   const revisionRef = useRef(document.revision);
   const titleRef = useRef(document.title);
+  const titleDocumentIdRef = useRef(document.id);
   const markdownRef = useRef(document.content);
   const saverRef = useRef<DebouncedSaver<DraftDocument> | undefined>(undefined);
   const outlineTree = useMemo(
@@ -95,9 +102,14 @@ export function DocumentEditor({
 
   useEffect(() => {
     revisionRef.current = document.revision;
-    titleRef.current = title;
     markdownRef.current = document.content;
-  }, [document.content, document.revision, title]);
+  }, [document.content, document.revision]);
+
+  useEffect(() => {
+    if (titleDocumentIdRef.current === document.id) return;
+    titleDocumentIdRef.current = document.id;
+    titleRef.current = document.title;
+  }, [document.id, document.title]);
 
   useEffect(() => {
     const scroller = editorScrollRef.current;
@@ -248,6 +260,27 @@ export function DocumentEditor({
     );
   }
 
+  async function handleExport(format: ExportFormat) {
+    if (exporting) return;
+    setExporting(true);
+    setExportError('');
+    try {
+      await downloadCurrentDocument({
+        client: notesApi,
+        documentId: document.id,
+        request: {
+          format,
+          title,
+          content: markdownRef.current,
+        },
+      });
+    } catch (error) {
+      setExportError(error instanceof Error ? error.message : '导出失败');
+    } finally {
+      setExporting(false);
+    }
+  }
+
   return (
     <section className="editor-pane">
       <header className="editor-header">
@@ -274,7 +307,47 @@ export function DocumentEditor({
           <span>/</span>
         </div>
         <SaveState status={status} />
-        <DropdownMenu.Root>
+        <DropdownMenu.Root modal={false}>
+          <DropdownMenu.Trigger asChild>
+            <button
+              type="button"
+              className="insert-button export-button"
+              aria-label="导出"
+              data-tooltip="导出当前文档"
+              disabled={exporting}
+            >
+              <Download size={16} />
+              <span>{exporting ? '导出中' : '导出'}</span>
+            </button>
+          </DropdownMenu.Trigger>
+          <DropdownMenu.Portal>
+            <DropdownMenu.Content
+              className="menu-content"
+              align="end"
+              aria-label="导出格式"
+            >
+              <ExportMenuItem
+                label="Markdown"
+                extension="MD"
+                disabled={exporting}
+                onSelect={() => void handleExport('md')}
+              />
+              <ExportMenuItem
+                label="Word"
+                extension="DOCX"
+                disabled={exporting}
+                onSelect={() => void handleExport('docx')}
+              />
+              <ExportMenuItem
+                label="PDF"
+                extension="PDF"
+                disabled={exporting}
+                onSelect={() => void handleExport('pdf')}
+              />
+            </DropdownMenu.Content>
+          </DropdownMenu.Portal>
+        </DropdownMenu.Root>
+        <DropdownMenu.Root modal={false}>
           <DropdownMenu.Trigger asChild>
             <button type="button" className="insert-button">
               <Plus size={16} /> 插入
@@ -307,6 +380,11 @@ export function DocumentEditor({
             </DropdownMenu.Content>
           </DropdownMenu.Portal>
         </DropdownMenu.Root>
+        {exportError && (
+          <div className="export-error" role="alert">
+            {exportError}
+          </div>
+        )}
       </header>
       <div className="editor-body">
         <div className="editor-scroll" ref={editorScrollRef}>
@@ -402,6 +480,31 @@ export function DocumentEditor({
         }}
       />
     </section>
+  );
+}
+
+function ExportMenuItem({
+  label,
+  extension,
+  disabled,
+  onSelect,
+}: {
+  label: string;
+  extension: string;
+  disabled: boolean;
+  onSelect: () => void;
+}) {
+  return (
+    <DropdownMenu.Item
+      className="menu-item export-menu-item"
+      aria-label={label}
+      disabled={disabled}
+      onSelect={onSelect}
+    >
+      <FileText size={16} />
+      <span>{label}</span>
+      <small>{extension}</small>
+    </DropdownMenu.Item>
   );
 }
 

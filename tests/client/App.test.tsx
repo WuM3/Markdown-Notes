@@ -92,10 +92,8 @@ describe('App', () => {
     );
     expect(screen.getByRole('button', { name: '最近' })).toBeInTheDocument();
     expect(screen.getByRole('button', { name: '回收站' })).toBeInTheDocument();
-    expect(screen.getByRole('link', { name: '导出全部笔记' })).toHaveAttribute(
-      'data-tooltip',
-      '导出全部笔记',
-    );
+    expect(screen.queryByRole('link', { name: '导出全部笔记' })).not.toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: '导出' })).not.toBeInTheDocument();
     expect(screen.getByRole('button', { name: '收起文件夹目录' })).toHaveAttribute(
       'data-tooltip',
       '收起文件夹目录',
@@ -116,6 +114,14 @@ describe('App', () => {
 
     await userEvent.click(screen.getByText('实验记录'));
     expect(await screen.findByLabelText('文档标题')).toHaveValue('实验记录');
+    expect(screen.getByRole('button', { name: '导出' })).toBeInTheDocument();
+    await userEvent.click(screen.getByRole('button', { name: '导出' }));
+    const exportMenu = screen.getByRole('menu', { name: '导出' });
+    expect(
+      within(exportMenu)
+        .getAllByRole('menuitem')
+        .map((item) => item.getAttribute('aria-label')),
+    ).toEqual(['Markdown', 'Word', 'PDF']);
     expect(screen.getByTestId('markdown-editor')).toHaveTextContent('第一轮实验');
     expect(screen.getByRole('navigation', { name: '文档目录' })).toBeInTheDocument();
     expect(screen.getByRole('button', { name: '第一轮实验' })).toBeInTheDocument();

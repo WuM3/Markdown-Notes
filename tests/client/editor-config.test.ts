@@ -47,31 +47,85 @@ describe('buildCrepeOptions', () => {
       codeMirror.languages?.some((language) => language.name === 'TypeScript'),
     ).toBe(true);
 
-    const groups: Array<{ key: string; items: Array<{ key: string }> }> = [];
+    const groups: Array<{
+      key: string;
+      items: Array<{ key: string; item?: { icon?: string } }>;
+    }> = [
+      {
+        key: 'function',
+        items: [{ key: 'code' }, { key: 'link' }],
+      },
+    ];
     const toolbar = options.featureConfigs?.[CrepeFeature.Toolbar] as {
       buildToolbar?: (builder: {
         addGroup: (key: string, label: string) => {
           addItem: (key: string, item: unknown) => unknown;
         };
+        getGroup: (key: string) => {
+          clear: () => {
+            addItem: (key: string, item: unknown) => unknown;
+          };
+        };
       }) => void;
     };
+    const createGroupApi = (group: {
+      items: Array<{ key: string; item?: { icon?: string } }>;
+    }) => ({
+      addItem(itemKey: string, item: unknown) {
+        group.items.push({
+          key: itemKey,
+          item:
+            item && typeof item === 'object' && 'icon' in item
+              ? (item as { icon?: string })
+              : undefined,
+        });
+        return this;
+      },
+      clear() {
+        group.items = [];
+        return this;
+      },
+    });
     toolbar.buildToolbar?.({
       addGroup(key) {
-        const group = { key, items: [] as Array<{ key: string }> };
-        groups.push(group);
-        return {
-          addItem(itemKey) {
-            group.items.push({ key: itemKey });
-            return this;
-          },
+        const group = {
+          key,
+          items: [] as Array<{ key: string; item?: { icon?: string } }>,
         };
+        groups.push(group);
+        return createGroupApi(group);
       },
+      getGroup(key) {
+        const group = groups.find((item) => item.key === key);
+        if (!group) throw new Error(`missing group: ${key}`);
+        return createGroupApi(group);
+      },
+    });
+    expect(groups).toContainEqual({
+      key: 'function',
+      items: [
+        { key: 'link', item: expect.any(Object) },
+        { key: 'quote', item: expect.any(Object) },
+        { key: 'code-block', item: expect.any(Object) },
+        { key: 'text-color', item: expect.any(Object) },
+      ],
     });
     expect(groups).toContainEqual({
       key: 'block-tools',
       items: [
-        { key: 'block-format' },
+        { key: 'block-format', item: expect.any(Object) },
       ],
     });
+    const functionGroup = groups.find((item) => item.key === 'function');
+    const blockGroup = groups.find((item) => item.key === 'block-tools');
+    const colorIcon = functionGroup?.items.find(
+      (item) => item.key === 'text-color',
+    )?.item?.icon;
+    const formatIcon = blockGroup?.items.find(
+      (item) => item.key === 'block-format',
+    )?.item?.icon;
+    expect(colorIcon).toContain('toolbar-color-current');
+    expect(colorIcon).not.toContain('⌄');
+    expect(formatIcon).not.toContain('⌄');
   });
 });

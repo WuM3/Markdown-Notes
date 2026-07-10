@@ -1,6 +1,7 @@
 import type {
   AssetRecord,
   DocumentRecord,
+  ExportDocumentRequest,
   SaveDocumentRequest,
   SearchResult,
   TrashEntry,
@@ -32,6 +33,11 @@ export interface ApiClientOptions {
   fetcher?: typeof fetch;
 }
 
+export interface ExportDocumentResponse {
+  blob: Blob;
+  contentDisposition: string | null;
+}
+
 export class ApiClient {
   private readonly fetcher?: typeof fetch;
   private readonly baseUrl: string;
@@ -51,10 +57,6 @@ export class ApiClient {
     return this.apiUrl(
       `/assets/${encodeURIComponent(documentId)}/${encodeURIComponent(name)}`,
     );
-  }
-
-  exportUrl(): string {
-    return this.apiUrl('/export');
   }
 
   async request<T>(path: string, init?: RequestInit): Promise<T> {
@@ -95,6 +97,27 @@ export class ApiClient {
       `/documents/${encodeURIComponent(id)}`,
       jsonRequest('PUT', input),
     );
+
+  exportDocument = async (
+    id: string,
+    input: ExportDocumentRequest,
+  ): Promise<ExportDocumentResponse> => {
+    const response = await (this.fetcher ?? globalThis.fetch)(
+      this.apiUrl(`/documents/${encodeURIComponent(id)}/export`),
+      jsonRequest('POST', input),
+    );
+    if (!response.ok) {
+      const contentType = response.headers.get('content-type') ?? '';
+      const body = contentType.includes('application/json')
+        ? await response.json()
+        : await response.text();
+      throw new ApiError(response.status, body);
+    }
+    return {
+      blob: await response.blob(),
+      contentDisposition: response.headers.get('content-disposition'),
+    };
+  };
 
   moveNode = (input: {
     kind: 'folder' | 'document';

@@ -11,6 +11,7 @@ import {
   isSuspiciousMarqueeStartPosition,
   isMarqueeBlockHit,
   isMeaningfulResizeGesture,
+  resolveMarqueeSelectionRange,
   resolveMarqueeDomBlockRange,
   resolveMarqueeClearPosition,
   resolveResizeGestureStep,
@@ -175,8 +176,17 @@ describe('image editor interactions', () => {
     const paragraph = document.createElement('p');
     const image = document.createElement('img');
     const button = document.createElement('button');
+    const codeBlock = document.createElement('div');
+    codeBlock.className = 'milkdown-code-block';
+    const codeEditor = document.createElement('div');
+    codeEditor.className = 'cm-editor';
+    const codeLine = document.createElement('div');
+    codeLine.className = 'cm-line';
+    codeLine.textContent = 'const value = 1;';
+    codeEditor.append(codeLine);
+    codeBlock.append(codeEditor);
     paragraph.append('正文');
-    editor.append(paragraph, image, button);
+    editor.append(paragraph, codeBlock, image, button);
 
     paragraph.getBoundingClientRect = () =>
       new DOMRect(0, 0, 260, 32);
@@ -196,6 +206,8 @@ describe('image editor interactions', () => {
     ).toBe(false);
     expect(shouldStartMarqueeSelection(image, editor)).toBe(false);
     expect(shouldStartMarqueeSelection(button, editor)).toBe(false);
+    expect(shouldStartMarqueeSelection(codeBlock, editor)).toBe(false);
+    expect(shouldStartMarqueeSelection(codeLine, editor)).toBe(false);
   });
 
   it('starts marquee selection from the editor shell blank space', () => {
@@ -366,6 +378,176 @@ describe('image editor interactions', () => {
     ).toEqual({ from: 20, to: 30 });
   });
 
+  it('resolves marquee selection to hit text rows instead of the whole paragraph', () => {
+    const editor = document.createElement('div');
+    const paragraph = document.createElement('p');
+    editor.append(paragraph);
+    const lines = [
+      new DOMRect(80, 40, 420, 24),
+      new DOMRect(80, 80, 500, 24),
+      new DOMRect(80, 120, 460, 24),
+    ];
+    const view = createMarqueeView({
+      editor,
+      blocks: [
+        {
+          element: paragraph,
+          from: 0,
+          to: 80,
+          typeName: 'paragraph',
+        },
+      ],
+      positions: [
+        { y: 80, side: 'start', pos: 21 },
+        { y: 80, side: 'end', pos: 40 },
+        { y: 120, side: 'start', pos: 41 },
+        { y: 120, side: 'end', pos: 60 },
+      ],
+    });
+
+    expect(
+      resolveMarqueeSelectionRange(view, [
+        {
+          block: paragraph,
+          blockIndex: 0,
+          lineRects: [lines[1], lines[2]],
+          highlightRects: [],
+        },
+      ]),
+    ).toEqual({
+      from: 21,
+      to: 60,
+      selectNode: false,
+    });
+  });
+
+  it('keeps the first and last text blocks line-trimmed when marquee hits mixed blocks', () => {
+    const editor = document.createElement('div');
+    const paragraph = document.createElement('p');
+    const image = document.createElement('div');
+    image.className = 'milkdown-image-block';
+    const code = document.createElement('div');
+    code.className = 'milkdown-code-block';
+    const heading = document.createElement('h2');
+    editor.append(paragraph, image, code, heading);
+
+    const view = createMarqueeView({
+      editor,
+      blocks: [
+        { element: paragraph, from: 0, to: 50, typeName: 'paragraph' },
+        { element: image, from: 50, to: 55, typeName: 'image-block' },
+        { element: code, from: 55, to: 90, typeName: 'code_block' },
+        { element: heading, from: 90, to: 120, typeName: 'heading' },
+      ],
+      positions: [
+        { y: 72, side: 'start', pos: 16 },
+        { y: 72, side: 'end', pos: 32 },
+        { y: 220, side: 'start', pos: 96 },
+        { y: 220, side: 'end', pos: 112 },
+      ],
+    });
+
+    expect(
+      resolveMarqueeSelectionRange(view, [
+        {
+          block: paragraph,
+          blockIndex: 0,
+          lineRects: [new DOMRect(80, 72, 420, 24)],
+          highlightRects: [],
+        },
+        {
+          block: image,
+          blockIndex: 1,
+          lineRects: [new DOMRect(80, 112, 520, 96)],
+          highlightRects: [],
+        },
+        {
+          block: code,
+          blockIndex: 2,
+          lineRects: [new DOMRect(80, 216, 520, 80)],
+          highlightRects: [],
+        },
+        {
+          block: heading,
+          blockIndex: 3,
+          lineRects: [new DOMRect(80, 220, 360, 28)],
+          highlightRects: [],
+        },
+      ]),
+    ).toEqual({
+      from: 16,
+      to: 112,
+      selectNode: false,
+    });
+  });
+
+  it('selects a single image block as a node when marquee only hits that image', () => {
+    const editor = document.createElement('div');
+    const image = document.createElement('div');
+    image.className = 'milkdown-image-block';
+    editor.append(image);
+    const view = createMarqueeView({
+      editor,
+      blocks: [{ element: image, from: 12, to: 17, typeName: 'image-block' }],
+      positions: [],
+    });
+
+    expect(
+      resolveMarqueeSelectionRange(view, [
+        {
+          block: image,
+          blockIndex: 0,
+          lineRects: [new DOMRect(80, 120, 520, 140)],
+          highlightRects: [],
+        },
+      ]),
+    ).toEqual({
+      from: 12,
+      to: 17,
+      selectNode: true,
+    });
+  });
+
+  it('uses whole code block boundaries when marquee starts or ends on a code block', () => {
+    const editor = document.createElement('div');
+    const code = document.createElement('div');
+    code.className = 'milkdown-code-block';
+    const paragraph = document.createElement('p');
+    editor.append(code, paragraph);
+    const view = createMarqueeView({
+      editor,
+      blocks: [
+        { element: code, from: 0, to: 40, typeName: 'code_block' },
+        { element: paragraph, from: 40, to: 80, typeName: 'paragraph' },
+      ],
+      positions: [
+        { y: 180, side: 'start', pos: 48 },
+        { y: 180, side: 'end', pos: 66 },
+      ],
+    });
+
+    expect(
+      resolveMarqueeSelectionRange(view, [
+        {
+          block: code,
+          blockIndex: 0,
+          lineRects: [new DOMRect(80, 80, 520, 80)],
+          highlightRects: [],
+        },
+        {
+          block: paragraph,
+          blockIndex: 1,
+          lineRects: [new DOMRect(80, 180, 360, 24)],
+          highlightRects: [],
+        },
+      ]),
+    ).toEqual({
+      from: 0,
+      to: 66,
+      selectNode: false,
+    });
+  });
+
   it('rejects document-start positions for non-first marquee blocks', () => {
     const editor = document.createElement('div');
     const first = document.createElement('p');
@@ -426,3 +608,71 @@ describe('image editor interactions', () => {
     ).toBeUndefined();
   });
 });
+
+interface MarqueeViewBlock {
+  element: HTMLElement;
+  from: number;
+  to: number;
+  typeName: string;
+}
+
+interface MarqueeCoordinatePosition {
+  y: number;
+  side: 'start' | 'end';
+  pos: number;
+}
+
+function createMarqueeView(input: {
+  editor: HTMLElement;
+  blocks: MarqueeViewBlock[];
+  positions: MarqueeCoordinatePosition[];
+}) {
+  return {
+    dom: input.editor,
+    nodeDOM: (offset: number) =>
+      input.blocks.find((block) => block.from === offset)?.element,
+    posAtCoords: ({ left, top }: { left: number; top: number }) => {
+      const side = left < 200 ? 'start' : 'end';
+      const match = input.positions.find(
+        (position) =>
+          Math.abs(position.y - top) <= 20 &&
+          position.side === side,
+      );
+      return match ? { pos: match.pos } : undefined;
+    },
+    state: {
+      doc: {
+        content: { size: Math.max(...input.blocks.map((block) => block.to)) },
+        childCount: input.blocks.length,
+        forEach: (
+          callback: (
+            node: { nodeSize: number; type: { name: string }; isBlock: boolean },
+            offset: number,
+          ) => void,
+        ) => {
+          input.blocks.forEach((block) => {
+            callback(
+              {
+                nodeSize: block.to - block.from,
+                type: { name: block.typeName },
+                isBlock: true,
+              },
+              block.from,
+            );
+          });
+        },
+        nodeAt: (pos: number) => {
+          const block = input.blocks.find(
+            (candidate) => candidate.from === pos,
+          );
+          if (!block) return undefined;
+          return {
+            nodeSize: block.to - block.from,
+            type: { name: block.typeName },
+            isBlock: true,
+          };
+        },
+      },
+    },
+  } as never;
+}

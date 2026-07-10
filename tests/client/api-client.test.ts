@@ -19,7 +19,63 @@ describe('ApiClient', () => {
     expect(client.assetUrl('文档', '图 1.png')).toBe(
       'http://10.29.166.53:3210/api/assets/%E6%96%87%E6%A1%A3/%E5%9B%BE%201.png',
     );
-    expect(client.exportUrl()).toBe('http://10.29.166.53:3210/api/export');
+  });
+
+  it('downloads a binary current-document export with response metadata', async () => {
+    const fetcher = vi.fn().mockResolvedValue(
+      new Response(new Blob(['draft bytes'], { type: 'text/markdown' }), {
+        headers: {
+          'content-type': 'text/markdown; charset=utf-8',
+          'content-disposition':
+            "attachment; filename*=UTF-8''%E5%AE%9E%E9%AA%8C.md",
+        },
+      }),
+    );
+    const client = new ApiClient({ target: 'web', fetcher });
+
+    const result = await client.exportDocument('文档/id', {
+      format: 'md',
+      title: '实验',
+      content: '未保存草稿',
+    });
+
+    expect(fetcher).toHaveBeenCalledWith(
+      '/api/documents/%E6%96%87%E6%A1%A3%2Fid/export',
+      expect.objectContaining({
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({
+          format: 'md',
+          title: '实验',
+          content: '未保存草稿',
+        }),
+      }),
+    );
+    expect(await result.blob.text()).toBe('draft bytes');
+    expect(result.contentDisposition).toContain('%E5%AE%9E%E9%AA%8C.md');
+  });
+
+  it('preserves JSON export errors instead of returning a corrupt blob', async () => {
+    const client = new ApiClient({
+      target: 'web',
+      fetcher: vi.fn().mockResolvedValue(
+        new Response(JSON.stringify({ code: 'EXPORT_FAILED', message: '导出失败' }), {
+          status: 500,
+          headers: { 'content-type': 'application/json' },
+        }),
+      ),
+    });
+
+    await expect(
+      client.exportDocument('doc-1', {
+        format: 'pdf',
+        title: '失败',
+        content: '',
+      }),
+    ).rejects.toMatchObject({
+      status: 500,
+      body: { code: 'EXPORT_FAILED', message: '导出失败' },
+    });
   });
 
   it('preserves conflict response details in ApiError', async () => {

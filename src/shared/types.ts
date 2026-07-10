@@ -26,6 +26,14 @@ export interface SaveDocumentRequest {
   revision: string;
 }
 
+export type ExportFormat = 'md' | 'docx' | 'pdf';
+
+export interface ExportDocumentRequest {
+  format: ExportFormat;
+  title: string;
+  content: string;
+}
+
 export interface SearchResult {
   id: string;
   title: string;

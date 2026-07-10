@@ -94,12 +94,15 @@ test('shows icon and editor tooltips with restrained motion', async ({
   const toolbar = page.locator('.milkdown-toolbar');
   await expect(toolbar).toBeVisible();
   const toolbarButtons = toolbar.locator('.toolbar-item');
-  await expect(toolbarButtons).toHaveCount(6);
+  await expect(toolbarButtons).toHaveCount(8);
   await expect(toolbarButtons.nth(0)).toHaveAttribute('aria-label', '加粗');
-  await expect(toolbarButtons.nth(4)).toHaveAttribute('aria-label', '链接');
-  await expect(toolbarButtons.nth(5)).toHaveAttribute('aria-label', '格式');
+  await expect(toolbarButtons.nth(3)).toHaveAttribute('aria-label', '链接');
+  await expect(toolbarButtons.nth(4)).toHaveAttribute('aria-label', '引用');
+  await expect(toolbarButtons.nth(5)).toHaveAttribute('aria-label', '代码块');
+  await expect(toolbarButtons.nth(6)).toHaveAttribute('aria-label', '颜色');
+  await expect(toolbarButtons.nth(7)).toHaveAttribute('aria-label', '格式');
 
-  await toolbarButtons.nth(5).hover();
+  await toolbarButtons.nth(7).hover();
   const formatMenu = page.getByRole('menu', { name: '格式' });
   await expect(formatMenu).toBeVisible();
   await formatMenu.getByRole('menuitem', { name: '一级标题' }).click();
@@ -303,3 +306,9 @@ test('honors reduced motion preferences', async ({ page }, testInfo) => {
   );
   expect(durationSeconds).toBeLessThan(0.001);
 });
+
+
+
+
+
+

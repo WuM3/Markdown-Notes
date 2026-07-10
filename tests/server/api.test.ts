@@ -157,7 +157,7 @@ describe('Fastify API', () => {
     expect(recent.json()[0]).toMatchObject({ title: '实验日志' });
   });
 
-  it('uploads assets, enforces safe download headers, and exports a zip', async () => {
+  it('uploads assets and enforces safe download headers', async () => {
     const created = (
       await app.inject({
         method: 'POST',
@@ -193,10 +193,6 @@ describe('Fastify API', () => {
     expect(download.headers['content-disposition']).toContain('attachment');
     expect(download.headers['x-content-type-options']).toBe('nosniff');
 
-    const exported = await app.inject({ method: 'GET', url: '/api/export' });
-    expect(exported.statusCode).toBe(200);
-    expect(exported.headers['content-type']).toContain('application/zip');
-    expect(exported.rawPayload.subarray(0, 2).toString()).toBe('PK');
   });
 
   it('imports remote Markdown images into local assets while saving', async () => {

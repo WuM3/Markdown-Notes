@@ -1,16 +1,19 @@
 import { createReadStream, existsSync } from 'node:fs';
 import { readFile, stat } from 'node:fs/promises';
 import path from 'node:path';
-import { PassThrough } from 'node:stream';
 import cors from '@fastify/cors';
 import multipart from '@fastify/multipart';
 import fastifyStatic from '@fastify/static';
-import { ZipArchive } from 'archiver';
 import chokidar, { type FSWatcher } from 'chokidar';
 import Fastify, {
   type FastifyInstance,
 } from 'fastify';
-import type { DocumentRecord, NodeKind } from '../shared/types.js';
+import type {
+  DocumentRecord,
+  ExportDocumentRequest,
+  NodeKind,
+} from '../shared/types.js';
+import { exportDocument } from './export/export-document.js';
 import { NotesRepository, RevisionConflictError } from './repository.js';
 import { importRemoteMarkdownImages } from './remote-assets.js';
 import { SearchIndex } from './search-index.js';
@@ -80,6 +83,26 @@ export async function buildApp(options: BuildAppOptions): Promise<FastifyInstanc
     const { id } = request.params as { id: string };
     return repository.getDocument(id);
   });
+
+  app.post(
+    '/api/documents/:id/export',
+    { bodyLimit: 11 * 1024 * 1024 },
+    async (request, reply) => {
+      const { id } = request.params as { id: string };
+      const exported = await exportDocument({
+        repository,
+        documentId: id,
+        request: request.body as ExportDocumentRequest,
+      });
+      return reply
+        .header('content-type', exported.contentType)
+        .header(
+          'content-disposition',
+          `attachment; filename*=UTF-8''${encodeURIComponent(exported.fileName)}`,
+        )
+        .send(exported.data);
+    },
+  );
 
   app.put('/api/documents/:id', async (request, reply) => {
     const { id } = request.params as { id: string };
@@ -244,18 +267,6 @@ export async function buildApp(options: BuildAppOptions): Promise<FastifyInstanc
     return reply.send(createReadStream(filePath));
   });
 
-  app.get('/api/export', async (_request, reply) => {
-    const archive = await createExportArchive(repository);
-    const date = new Date().toISOString().slice(0, 10);
-    return reply
-      .header('content-type', 'application/zip')
-      .header(
-        'content-disposition',
-        `attachment; filename="markdown-notes-${date}.zip"`,
-      )
-      .send(archive);
-  });
-
   let watcher: FSWatcher | undefined;
   let refreshTimer: NodeJS.Timeout | undefined;
   if (options.watch !== false) {
@@ -334,24 +345,6 @@ export async function buildApp(options: BuildAppOptions): Promise<FastifyInstanc
   });
 
   return app;
-}
-
-async function createExportArchive(repository: NotesRepository): Promise<Buffer> {
-  const output = new PassThrough();
-  const chunks: Buffer[] = [];
-  output.on('data', (chunk: Buffer) => chunks.push(chunk));
-  const finished = new Promise<Buffer>((resolve, reject) => {
-    output.on('end', () => resolve(Buffer.concat(chunks)));
-    output.on('error', reject);
-  });
-
-  const archive = new ZipArchive({ zlib: { level: 9 } });
-  archive.on('error', (error) => output.destroy(error));
-  archive.pipe(output);
-  archive.directory(repository.notesDir, 'notes');
-  archive.directory(repository.trashDir, '.trash');
-  await archive.finalize();
-  return finished;
 }
 
 function isSafeInlineImage(filePath: string): boolean {

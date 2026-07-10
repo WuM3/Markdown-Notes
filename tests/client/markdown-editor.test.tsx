@@ -15,6 +15,10 @@ const { MockCrepe, createdEditors } = vi.hoisted(() => {
     readonly editor = {
       action: vi.fn(),
       config: vi.fn(),
+      use: vi.fn((plugin: unknown) => {
+        void plugin;
+        return this.editor;
+      }),
     };
 
     constructor() {
@@ -31,10 +35,29 @@ vi.mock('@milkdown/crepe', async (importOriginal) => ({
 }));
 
 vi.mock('@milkdown/kit/utils', () => ({
+  $markAttr: vi.fn((id: string) => ({ key: `${id}Attr` })),
+  $markSchema: vi.fn((id: string) => ({
+    id,
+    key: `${id}Schema`,
+    mark: vi.fn(),
+    type: vi.fn(),
+  })),
+  $remark: vi.fn((id: string) => ({
+    id,
+    options: {},
+    plugin: vi.fn(),
+  })),
   replaceAll: vi.fn((markdown: string) => ({ type: 'replaceAll', markdown })),
 }));
 
 import { MarkdownEditor } from '../../src/client/editor/MarkdownEditor.js';
+import {
+  textStyleAttr,
+  textStyleRemarkPlugin,
+  textStyleSchema,
+  textStyleStringifyConfig,
+} from '../../src/client/editor/text-style.js';
+import { plainTextClipboardConfig } from '../../src/client/editor/plain-text-clipboard.js';
 
 const baseDocument = {
   id: 'doc-1',
@@ -72,5 +95,22 @@ describe('MarkdownEditor', () => {
 
     expect(createdEditors).toHaveLength(1);
     expect(createdEditors[0]?.destroy).not.toHaveBeenCalled();
+  });
+
+  it('registers text style attr before schema so color marks render in the editor', () => {
+    render(<MarkdownEditor document={baseDocument} onChange={vi.fn()} />);
+
+    const editorUse = createdEditors[0]?.editor.use;
+    expect(editorUse).toBeDefined();
+    const registeredPlugins = editorUse!.mock.calls.map(([plugin]) => plugin);
+
+    expect(registeredPlugins).toContain(textStyleAttr);
+    expect(registeredPlugins).toContain(textStyleSchema);
+    expect(registeredPlugins).toContain(textStyleRemarkPlugin);
+    expect(registeredPlugins).toContain(textStyleStringifyConfig);
+    expect(registeredPlugins).toContain(plainTextClipboardConfig);
+    expect(registeredPlugins.indexOf(textStyleAttr)).toBeLessThan(
+      registeredPlugins.indexOf(textStyleSchema),
+    );
   });
 });

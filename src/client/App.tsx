@@ -231,7 +231,6 @@ export const App = forwardRef<AppHandle, AppProps>(function App(
     >
       <NavRail
         view={view}
-        exportUrl={notesApi.exportUrl()}
         onOpenServerSettings={onOpenServerSettings}
         onChange={(nextView) => {
           setView(nextView);

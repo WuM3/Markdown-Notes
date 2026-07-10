@@ -109,6 +109,12 @@ export interface MarqueeHit {
   highlightRects: MarqueeHighlightRect[];
 }
 
+export interface MarqueeSelectionRange {
+  from: number;
+  to: number;
+  selectNode: boolean;
+}
+
 export interface MarqueeDomBlockRangeInput {
   editorRoot: HTMLElement;
   block: HTMLElement;
@@ -316,7 +322,11 @@ export function shouldStartMarqueeSelection(
   void point;
   if (!(target instanceof HTMLElement)) return false;
   if (!editorRoot.contains(target)) return false;
-  if (target.closest(`${handleSelector}, button, input, textarea, select, a, img, ${imageBlockSelector}`)) {
+  if (
+    target.closest(
+      `${handleSelector}, button, input, textarea, select, a, img, ${imageBlockSelector}, .milkdown-code-block, .cm-editor`,
+    )
+  ) {
     return false;
   }
   if (target === editorRoot) return !isEditableRoot(editorRoot);
@@ -401,6 +411,31 @@ export function resolveMarqueeDomBlockRange(
   if (to <= from) return undefined;
 
   return { from, to };
+}
+
+export function resolveMarqueeSelectionRange(
+  view: EditorView,
+  hits: MarqueeHit[],
+): MarqueeSelectionRange | undefined {
+  if (!hits.length) return undefined;
+
+  const firstHit = hits[0];
+  const lastHit = hits[hits.length - 1];
+  if (!firstHit || !lastHit) return undefined;
+
+  if (hits.length === 1 && isImageBlockElement(firstHit.block)) {
+    const range = findBlockRangeByDomIndex(view, firstHit.block);
+    const pos = range?.from ?? findImageBlockPosition(view, firstHit.block);
+    const to = range?.to ?? pos;
+    if (pos === undefined || to === undefined || to <= pos) return undefined;
+    return { from: pos, to, selectNode: true };
+  }
+
+  const from = findMarqueeHitStartPosition(view, firstHit);
+  const to = findMarqueeHitEndPosition(view, lastHit);
+  if (from === undefined || to === undefined || to <= from) return undefined;
+
+  return { from, to, selectNode: false };
 }
 
 export function resolveMarqueeClearPosition(
@@ -765,30 +800,23 @@ function applyMarqueeSelection(
   view: EditorView,
   hits: MarqueeHit[],
 ): void {
-  if (!hits.length) return;
+  const range = resolveMarqueeSelectionRange(view, hits);
+  if (!range) return;
 
-  const firstBlock = hits[0]?.block;
-  const lastBlock = hits[hits.length - 1]?.block;
-  if (!firstBlock || !lastBlock) return;
-
-  if (hits.length === 1 && isImageBlockElement(firstBlock)) {
-    const pos = findImageBlockPosition(view, firstBlock);
-    if (pos === undefined) return;
+  if (range.selectNode) {
+    view.focus();
     view.dispatch(
       view.state.tr
-        .setSelection(NodeSelection.create(view.state.doc, pos))
+        .setSelection(NodeSelection.create(view.state.doc, range.from))
         .scrollIntoView(),
     );
     return;
   }
 
-  const from = findBlockStartPosition(view, firstBlock);
-  const to = findBlockEndPosition(view, lastBlock);
-  if (from === undefined || to === undefined || to <= from) return;
-
+  view.focus();
   const selection = TextSelection.between(
-    view.state.doc.resolve(from),
-    view.state.doc.resolve(to),
+    view.state.doc.resolve(range.from),
+    view.state.doc.resolve(range.to),
   );
   view.dispatch(view.state.tr.setSelection(selection).scrollIntoView());
 }
@@ -916,6 +944,62 @@ function findBlockEndPosition(
   const node = view.state.doc.nodeAt(start);
   if (!node) return start;
   return Math.min(start + node.nodeSize, view.state.doc.content.size);
+}
+
+function findMarqueeHitStartPosition(
+  view: EditorView,
+  hit: MarqueeHit,
+): number | undefined {
+  if (shouldUseWholeBlockForMarqueeSelection(hit.block)) {
+    return findBlockStartPosition(view, hit.block);
+  }
+
+  const line = hit.lineRects[0];
+  const linePosition = line
+    ? findLineEdgePosition(view, hit.block, line, 'start')
+    : undefined;
+  return linePosition ?? findBlockStartPosition(view, hit.block);
+}
+
+function findMarqueeHitEndPosition(
+  view: EditorView,
+  hit: MarqueeHit,
+): number | undefined {
+  if (shouldUseWholeBlockForMarqueeSelection(hit.block)) {
+    return findBlockEndPosition(view, hit.block);
+  }
+
+  const line = hit.lineRects[hit.lineRects.length - 1];
+  const linePosition = line
+    ? findLineEdgePosition(view, hit.block, line, 'end')
+    : undefined;
+  return linePosition ?? findBlockEndPosition(view, hit.block);
+}
+
+function shouldUseWholeBlockForMarqueeSelection(block: HTMLElement): boolean {
+  return isImageBlockElement(block) || block.matches('.milkdown-code-block');
+}
+
+function findLineEdgePosition(
+  view: EditorView,
+  block: HTMLElement,
+  line: DOMRect,
+  edge: 'start' | 'end',
+): number | undefined {
+  const y = line.top + line.height / 2;
+  const x = edge === 'start' ? line.left + 1 : line.right + 1;
+  const fallbackX = edge === 'start' ? line.left + 1 : line.right - 1;
+  const pos =
+    findPointDocumentPosition(view, { clientX: x, clientY: y }) ??
+    findPointDocumentPosition(view, { clientX: fallbackX, clientY: y });
+  if (pos === undefined) return undefined;
+
+  const range = findBlockRangeByDomIndex(view, block);
+  if (!range) return pos;
+
+  const inlineFrom = Math.min(range.to, range.from + 1);
+  const inlineTo = Math.max(inlineFrom, range.to - 1);
+  return clamp(pos, inlineFrom, inlineTo);
 }
 
 function findBlockRangeByDomIndex(
