@@ -53,7 +53,7 @@ export function applyBlockFormat(ctx: Ctx, format: BlockFormat): void {
 export function toggleBlockquote(ctx: Ctx): void {
   const view = ctx.get(editorViewCtx);
   const { selection } = view.state;
-  if (!selection.empty) {
+  if (selection instanceof TextSelection && !selection.empty) {
     const selectedText = view.state.doc
       .textBetween(selection.from, selection.to, '\n')
       .replace(/\r\n?/g, '\n');

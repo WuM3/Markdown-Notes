@@ -1,5 +1,10 @@
 import { Fragment, Schema, Slice } from '@milkdown/kit/prose/model';
-import { EditorState, NodeSelection, TextSelection } from '@milkdown/kit/prose/state';
+import {
+  EditorState,
+  NodeSelection,
+  type Selection,
+  TextSelection,
+} from '@milkdown/kit/prose/state';
 import { describe, expect, it, vi } from 'vitest';
 
 const mocks = vi.hoisted(() => ({
@@ -52,7 +57,7 @@ interface TestCtx {
   get: ReturnType<typeof vi.fn>;
 }
 
-function createHarness(doc: ReturnType<typeof schema.node>, selection: TextSelection) {
+function createHarness(doc: ReturnType<typeof schema.node>, selection: Selection) {
   let state = EditorState.create({ schema, doc, selection });
   const commands = { call: vi.fn() };
   const view = {
@@ -296,6 +301,18 @@ describe('block toolbar commands', () => {
 
     expect(harness.commands.call).not.toHaveBeenCalled();
     expect(harness.view.dispatch).not.toHaveBeenCalled();
+    expect(harness.view.focus).toHaveBeenCalledOnce();
+  });
+
+  it('wraps a NodeSelection of an empty code block', () => {
+    const doc = schema.node('doc', undefined, [schema.node('code_block')]);
+    const harness = createHarness(doc, NodeSelection.create(doc, 0));
+
+    toggleBlockquote(harness.ctx as never);
+
+    expect(harness.commands.call).toHaveBeenCalledWith(wrapInBlockTypeCommand.key, {
+      nodeType: schema.nodes.blockquote,
+    });
     expect(harness.view.focus).toHaveBeenCalledOnce();
   });
 
