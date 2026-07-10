@@ -24,10 +24,10 @@ export type BlockFormat = 'paragraph' | 'h1' | 'h2' | 'h3' | 'h4' | 'h5' | 'code
 export function getTouchedTextBlockRange(
   selection: Selection,
 ): { from: number; to: number } | undefined {
-  if (selection.empty) return undefined;
+  if (selection.empty || !(selection instanceof TextSelection)) return undefined;
 
-  const from = textBlockContentRange(selection.$from);
-  const to = textBlockContentRange(selection.$to);
+  const from = textBlockContentRange(selection.$from, 'following');
+  const to = textBlockContentRange(selection.$to, 'preceding');
   if (!from || !to) return undefined;
 
   return { from: from.from, to: to.to };
@@ -52,12 +52,23 @@ export function applyBlockFormat(ctx: Ctx, format: BlockFormat): void {
 
 export function toggleBlockquote(ctx: Ctx): void {
   const view = ctx.get(editorViewCtx);
-  if (selectionInsideNode(view.state.selection, 'blockquote')) {
+  const { selection } = view.state;
+  if (!selection.empty) {
+    const selectedText = view.state.doc
+      .textBetween(selection.from, selection.to, '\n')
+      .replace(/\r\n?/g, '\n');
+    if (!selectedText.trim()) {
+      focusEditor(ctx);
+      return;
+    }
+  }
+
+  if (selectionInsideNode(selection, 'blockquote')) {
     lift(view.state, view.dispatch, view);
   } else {
-    const selection = expandSelectionToTouchedTextBlocks(view.state.selection);
-    if (selection !== view.state.selection) {
-      view.dispatch(view.state.tr.setSelection(selection));
+    const expandedSelection = expandSelectionToTouchedTextBlocks(selection);
+    if (expandedSelection !== selection) {
+      view.dispatch(view.state.tr.setSelection(expandedSelection));
     }
     ctx.get(commandsCtx).call(wrapInBlockTypeCommand.key, {
       nodeType: blockquoteSchema.type(ctx),
@@ -134,13 +145,21 @@ function positionInsideNode($from: ResolvedPos, nodeName: string): boolean {
 
 function textBlockContentRange(
   $pos: ResolvedPos,
+  boundaryDirection: 'following' | 'preceding',
 ): { from: number; to: number } | undefined {
   for (let depth = $pos.depth; depth > 0; depth -= 1) {
     if ($pos.node(depth).isTextblock) {
       return { from: $pos.start(depth), to: $pos.end(depth) };
     }
   }
-  return undefined;
+
+  const sibling =
+    boundaryDirection === 'following' ? $pos.nodeAfter : $pos.nodeBefore;
+  if (!sibling?.isTextblock) return undefined;
+
+  return boundaryDirection === 'following'
+    ? { from: $pos.pos + 1, to: $pos.pos + sibling.nodeSize - 1 }
+    : { from: $pos.pos - sibling.nodeSize + 1, to: $pos.pos - 1 };
 }
 
 function expandSelectionToTouchedTextBlocks(selection: Selection): Selection {

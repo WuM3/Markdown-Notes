@@ -122,6 +122,37 @@ describe('getTouchedTextBlockRange', () => {
     });
   });
 
+  it('uses the preceding paragraph when the selection ends between two siblings', () => {
+    const doc = schema.node('doc', undefined, [
+      paragraph('alpha'),
+      paragraph('bravo'),
+    ]);
+    const betweenParagraphs = doc.firstChild!.nodeSize;
+
+    expect(getTouchedTextBlockRange(TextSelection.create(doc, 3, betweenParagraphs))).toEqual({
+      from: 1,
+      to: betweenParagraphs - 1,
+    });
+  });
+
+  it('uses the following paragraph when the selection starts between siblings', () => {
+    const doc = schema.node('doc', undefined, [
+      paragraph('alpha'),
+      paragraph('bravo'),
+      paragraph('charlie'),
+    ]);
+    const betweenFirstAndSecond = doc.firstChild!.nodeSize;
+
+    expect(
+      getTouchedTextBlockRange(
+        TextSelection.create(doc, betweenFirstAndSecond, doc.content.size - 3),
+      ),
+    ).toEqual({
+      from: betweenFirstAndSecond + 1,
+      to: doc.content.size - 1,
+    });
+  });
+
   it('does not expand a non-textblock node selection', () => {
     const doc = schema.node('doc', undefined, [paragraph('第一行内容')]);
 
@@ -181,6 +212,49 @@ describe('block toolbar commands', () => {
     expect(harness.state.doc.childCount).toBe(1);
   });
 
+  it('converts the complete preceding paragraph when selection ends between siblings', () => {
+    const doc = schema.node('doc', undefined, [
+      paragraph('alpha'),
+      paragraph('bravo'),
+    ]);
+    const harness = createHarness(doc, TextSelection.create(doc, 3, doc.firstChild!.nodeSize));
+
+    applyCodeBlock(harness.ctx as never);
+
+    expect(harness.state.doc.toJSON()).toEqual({
+      type: 'doc',
+      content: [
+        { type: 'code_block', content: [{ type: 'text', text: 'alpha' }] },
+        { type: 'paragraph', content: [{ type: 'text', text: 'bravo' }] },
+      ],
+    });
+  });
+
+  it('converts complete following paragraphs when selection starts between siblings', () => {
+    const doc = schema.node('doc', undefined, [
+      paragraph('alpha'),
+      paragraph('bravo'),
+      paragraph('charlie'),
+    ]);
+    const harness = createHarness(
+      doc,
+      TextSelection.create(doc, doc.firstChild!.nodeSize, doc.content.size - 3),
+    );
+
+    applyCodeBlock(harness.ctx as never);
+
+    expect(harness.state.doc.toJSON()).toEqual({
+      type: 'doc',
+      content: [
+        { type: 'paragraph', content: [{ type: 'text', text: 'alpha' }] },
+        {
+          type: 'code_block',
+          content: [{ type: 'text', text: 'bravo\ncharlie' }],
+        },
+      ],
+    });
+  });
+
   it('keeps the existing empty-selection code block command behavior', () => {
     const doc = schema.node('doc', undefined, [paragraph('alpha')]);
     const harness = createHarness(doc, TextSelection.create(doc, 3));
@@ -212,6 +286,17 @@ describe('block toolbar commands', () => {
     expect(harness.state.doc.toJSON()).toEqual(doc.toJSON());
     expect(harness.commands.call).not.toHaveBeenCalled();
     expect(harness.view.dispatch).not.toHaveBeenCalled();
+  });
+
+  it('keeps a quote whitespace-only selection inside non-whitespace text unchanged', () => {
+    const doc = schema.node('doc', undefined, [paragraph('alpha   bravo')]);
+    const harness = createHarness(doc, TextSelection.create(doc, 6, 9));
+
+    toggleBlockquote(harness.ctx as never);
+
+    expect(harness.commands.call).not.toHaveBeenCalled();
+    expect(harness.view.dispatch).not.toHaveBeenCalled();
+    expect(harness.view.focus).toHaveBeenCalledOnce();
   });
 
   it('expands a partial three-paragraph quote selection before calling the wrap command', () => {
