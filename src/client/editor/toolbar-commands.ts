@@ -55,6 +55,10 @@ export function toggleBlockquote(ctx: Ctx): void {
   if (selectionInsideNode(view.state.selection, 'blockquote')) {
     lift(view.state, view.dispatch, view);
   } else {
+    const selection = expandSelectionToTouchedTextBlocks(view.state.selection);
+    if (selection !== view.state.selection) {
+      view.dispatch(view.state.tr.setSelection(selection));
+    }
     ctx.get(commandsCtx).call(wrapInBlockTypeCommand.key, {
       nodeType: blockquoteSchema.type(ctx),
     });
@@ -74,8 +78,9 @@ export function applyCodeBlock(ctx: Ctx): void {
     return;
   }
 
+  const expandedSelection = expandSelectionToTouchedTextBlocks(selection);
   const selectedText = state.doc
-    .textBetween(selection.from, selection.to, '\n')
+    .textBetween(expandedSelection.from, expandedSelection.to, '\n')
     .replace(/\r\n?/g, '\n');
   if (!selectedText.trim()) {
     focusEditor(ctx);
@@ -86,6 +91,7 @@ export function applyCodeBlock(ctx: Ctx): void {
   const markdown = `\`\`\`${language}\n${selectedText}\n\`\`\`\n`;
   view.dispatch(
     state.tr
+      .setSelection(expandedSelection)
       .replaceSelection(markdownToSlice(markdown)(ctx))
       .scrollIntoView(),
   );
@@ -132,6 +138,13 @@ function textBlockContentRange(
     }
   }
   return undefined;
+}
+
+function expandSelectionToTouchedTextBlocks(selection: Selection): Selection {
+  const range = getTouchedTextBlockRange(selection);
+  return range
+    ? TextSelection.create(selection.$from.doc, range.from, range.to)
+    : selection;
 }
 
 function focusEditor(ctx: Ctx): void {
