@@ -62,6 +62,9 @@ describe('DocumentOutline', () => {
       'aria-current',
       'true',
     );
+    expect(screen.getByRole('button', { name: 'PDU 会话类型' })).not.toHaveAttribute(
+      'data-tooltip',
+    );
 
     await user.click(screen.getByRole('button', { name: '收起 核心网 UPF' }));
     expect(screen.queryByRole('button', { name: 'PDU 会话类型' })).not.toBeInTheDocument();
@@ -86,6 +89,57 @@ describe('DocumentOutline', () => {
 
     await user.click(screen.getByRole('button', { name: '关闭文档目录' }));
     expect(onClose).toHaveBeenCalledTimes(1);
+  });
+
+  it('only adds the full-title tooltip when a desktop heading is truncated', async () => {
+    const originalMatchMedia = window.matchMedia;
+    const maxTouchPointsDescriptor = Object.getOwnPropertyDescriptor(
+      navigator,
+      'maxTouchPoints',
+    );
+    Object.defineProperty(window, 'matchMedia', {
+      configurable: true,
+      value: vi.fn(() => ({
+        matches: true,
+        addEventListener: vi.fn(),
+        removeEventListener: vi.fn(),
+      })),
+    });
+    Object.defineProperty(navigator, 'maxTouchPoints', {
+      configurable: true,
+      value: 10,
+    });
+    const clientWidth = vi
+      .spyOn(HTMLElement.prototype, 'clientWidth', 'get')
+      .mockReturnValue(100);
+    const scrollWidth = vi
+      .spyOn(HTMLElement.prototype, 'scrollWidth', 'get')
+      .mockReturnValue(200);
+
+    render(
+      <DocumentOutline
+        nodes={outline}
+        activeId={undefined}
+        onNavigate={vi.fn()}
+      />,
+    );
+
+    expect(screen.getByRole('button', { name: 'PDU 会话类型' })).toHaveAttribute(
+      'data-tooltip',
+      'PDU 会话类型',
+    );
+
+    clientWidth.mockRestore();
+    scrollWidth.mockRestore();
+    Object.defineProperty(window, 'matchMedia', {
+      configurable: true,
+      value: originalMatchMedia,
+    });
+    if (maxTouchPointsDescriptor) {
+      Object.defineProperty(navigator, 'maxTouchPoints', maxTouchPointsDescriptor);
+    } else {
+      Reflect.deleteProperty(navigator, 'maxTouchPoints');
+    }
   });
 
   it('collapses the whole outline and exposes an expand control', async () => {

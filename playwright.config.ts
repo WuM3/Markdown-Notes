@@ -2,7 +2,7 @@ import { defineConfig, devices } from '@playwright/test';
 
 const e2ePort = Number(process.env.E2E_PORT ?? 3210);
 const e2eBaseURL = `http://127.0.0.1:${e2ePort}`;
-const e2eDataDir = `.tmp-e2e-data-${e2ePort}`;
+const e2eDataDir = `.tmp/e2e-data/${e2ePort}`;
 const cleanE2EDataCommand = `node -e "require('node:fs').rmSync(process.argv[1], { recursive: true, force: true })" ${JSON.stringify(
   e2eDataDir,
 )}`;
@@ -10,6 +10,7 @@ const cleanE2EDataCommand = `node -e "require('node:fs').rmSync(process.argv[1],
 export default defineConfig({
   testDir: './tests/e2e',
   fullyParallel: false,
+  outputDir: '.tmp/playwright',
   use: {
     baseURL: e2eBaseURL,
     trace: 'retain-on-failure',

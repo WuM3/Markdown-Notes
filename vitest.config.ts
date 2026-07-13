@@ -7,8 +7,8 @@ export default defineConfig({
     include: ['tests/**/*.test.{ts,tsx}'],
     exclude: ['tests/e2e/**'],
     coverage: {
+      reportsDirectory: '.tmp/coverage',
       reporter: ['text', 'html'],
     },
   },
 });
-

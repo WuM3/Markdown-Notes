@@ -121,10 +121,23 @@ describe('buildCrepeOptions', () => {
     const colorIcon = functionGroup?.items.find(
       (item) => item.key === 'text-color',
     )?.item?.icon;
+    const linkIcon = functionGroup?.items.find(
+      (item) => item.key === 'link',
+    )?.item?.icon;
+    const quoteIcon = functionGroup?.items.find(
+      (item) => item.key === 'quote',
+    )?.item?.icon;
+    const codeBlockIcon = functionGroup?.items.find(
+      (item) => item.key === 'code-block',
+    )?.item?.icon;
     const formatIcon = blockGroup?.items.find(
       (item) => item.key === 'block-format',
     )?.item?.icon;
     expect(colorIcon).toContain('toolbar-color-current');
+    expect(linkIcon).toContain('<svg');
+    expect(linkIcon).toContain('toolbar-lucide-icon');
+    expect(quoteIcon).toContain('<svg');
+    expect(codeBlockIcon).toContain('<svg');
     expect(colorIcon).not.toContain('⌄');
     expect(formatIcon).not.toContain('⌄');
   });

@@ -1,14 +1,11 @@
 node_modules/
 dist/
 dist-desktop/
-coverage/
-playwright-report/
-test-results/
 .env
 data/
 .superpowers/
 .worktrees/
-.tmp-e2e-data*/
+.tmp/
 *.log
 android/keystore.properties
 android/app/*.jks

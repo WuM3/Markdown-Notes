@@ -169,7 +169,8 @@ input:focus-visible {
   z-index: 200;
   max-width: min(240px, calc(100vw - 16px));
   pointer-events: none;
-  white-space: nowrap;
+  overflow-wrap: anywhere;
+  white-space: normal;
   animation: tooltip-enter var(--motion-medium) var(--motion-ease);
   transform-origin: center bottom;
 }
@@ -551,7 +552,7 @@ input:focus-visible {
 .document-canvas {
   position: relative;
   display: grid;
-  grid-template-columns: clamp(180px, 28vw, 420px) minmax(0, 860px);
+  grid-template-columns: clamp(160px, 22%, 300px) minmax(0, 860px);
   column-gap: 18px;
   width: 100%;
   min-height: 100%;
@@ -563,7 +564,7 @@ input:focus-visible {
 }
 
 .document-canvas.outline-collapsed {
-  grid-template-columns: clamp(180px, 28vw, 420px) minmax(0, 860px);
+  grid-template-columns: clamp(160px, 22%, 300px) minmax(0, 860px);
   column-gap: 18px;
 }
 
@@ -735,7 +736,7 @@ input:focus-visible {
   font-size: 14px;
   line-height: 1.45;
   text-align: left;
-  text-overflow: clip;
+  text-overflow: ellipsis;
   white-space: nowrap;
 }
 
@@ -778,15 +779,49 @@ input:focus-visible {
   background: var(--floating-toolbar-bg) !important;
 }
 
+.markdown-editor .milkdown-toolbar .divider {
+  height: 22px;
+  margin: 11px 4px;
+}
+
 .markdown-editor .milkdown-toolbar .toolbar-item {
   display: inline-flex !important;
+  width: auto !important;
   min-width: 34px;
   height: 34px;
+  margin: 5px 2px !important;
   align-items: center !important;
   justify-content: center !important;
-  gap: 4px !important;
-  padding: 0 8px !important;
+  gap: 0 !important;
+  padding: 0 7px !important;
+  border-radius: 6px !important;
   color: #6d6259 !important;
+}
+
+.markdown-editor .milkdown-toolbar .toolbar-item[data-toolbar-menu] {
+  padding: 0 10px !important;
+}
+
+.markdown-editor .milkdown-toolbar .toolbar-item[data-toolbar-menu]
+  > .milkdown-icon {
+  display: inline-flex;
+  width: 100%;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+}
+
+.markdown-editor .milkdown-toolbar .toolbar-item[data-toolbar-menu="color"] {
+  min-width: 48px;
+}
+
+.markdown-editor .milkdown-toolbar .toolbar-item[data-toolbar-menu="format"] {
+  min-width: 72px;
+}
+
+.markdown-editor .milkdown-toolbar .toolbar-item[data-toolbar-menu="format"]
+  > .milkdown-icon {
+  justify-content: space-between;
 }
 
 .markdown-editor .milkdown-toolbar .toolbar-item:hover,
@@ -800,6 +835,12 @@ input:focus-visible {
   width: 18px;
   height: 18px;
   color: currentColor;
+  fill: currentColor;
+}
+
+.markdown-editor .milkdown-toolbar .toolbar-item svg.toolbar-lucide-icon {
+  fill: none;
+  stroke: currentColor;
 }
 
 .markdown-editor .ProseMirror {
@@ -1186,7 +1227,7 @@ input:focus-visible {
 }
 
 .markdown-editor .toolbar-dropdown-label {
-  min-width: 32px;
+  min-width: 0;
   justify-content: center;
   font-weight: 680;
 }
@@ -1199,9 +1240,10 @@ input:focus-visible {
 
 .markdown-editor .toolbar-dropdown-caret {
   display: inline-block;
-  width: 5px;
-  height: 5px;
-  margin: 0 0 2px 2px;
+  width: 6px;
+  height: 6px;
+  flex: 0 0 6px;
+  margin: 0 1px 3px 0;
   transform: rotate(45deg);
   border-right: 1.5px solid currentColor;
   border-bottom: 1.5px solid currentColor;

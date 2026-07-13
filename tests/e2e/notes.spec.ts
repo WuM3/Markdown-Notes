@@ -45,7 +45,7 @@ test('creates, autosaves, reloads, and searches a Markdown note', async ({
   await expect(page.getByLabel('文档标题')).toHaveValue(title);
   await expect(page.locator('.ProseMirror')).toContainText(finalContent);
   await page.screenshot({
-    path: `test-results/visual-${testInfo.project.name}.png`,
+    path: testInfo.outputPath(`visual-${testInfo.project.name}.png`),
     fullPage: true,
   });
 
@@ -133,13 +133,36 @@ test('shows icon and editor tooltips with restrained motion', async ({
       overflowWrap: style.overflowWrap,
       textOverflow: style.textOverflow,
       whiteSpace: style.whiteSpace,
+      tooltip: element.getAttribute('data-tooltip'),
     };
   });
   expect(normalizedFontWeight(outlineHeadingStyle.fontWeight)).toBeGreaterThanOrEqual(
     650,
   );
   expect(outlineHeadingStyle.whiteSpace).toBe('nowrap');
-  expect(outlineHeadingStyle.textOverflow).not.toBe('ellipsis');
+  expect(outlineHeadingStyle.textOverflow).toBe('ellipsis');
+  if (testInfo.project.name === 'desktop') {
+    expect(outlineHeadingStyle.tooltip).toBe(outlineTitle);
+    await outlineHeading.hover();
+    const tooltip = page.getByRole('tooltip');
+    await expect(tooltip).toHaveText(outlineTitle);
+    const tooltipLayout = await tooltip.evaluate((element) => {
+      const style = getComputedStyle(element);
+      return {
+        clientWidth: element.clientWidth,
+        scrollWidth: element.scrollWidth,
+        overflowWrap: style.overflowWrap,
+        whiteSpace: style.whiteSpace,
+      };
+    });
+    expect(tooltipLayout.whiteSpace).not.toBe('nowrap');
+    expect(tooltipLayout.overflowWrap).toBe('anywhere');
+    expect(tooltipLayout.scrollWidth).toBeLessThanOrEqual(
+      tooltipLayout.clientWidth + 1,
+    );
+  } else {
+    expect(outlineHeadingStyle.tooltip).toBeNull();
+  }
   if (testInfo.project.name !== 'mobile') {
     const outlineLayout = await page
       .locator('.editor-scroll')
@@ -184,8 +207,8 @@ test('shows icon and editor tooltips with restrained motion', async ({
     expect(outlineLayout.pageScrollWidth).toBeLessThanOrEqual(
       outlineLayout.pageClientWidth + 1,
     );
-    expect(outlineLayout.linkScrollWidth).toBeLessThanOrEqual(
-      outlineLayout.linkClientWidth + 1,
+    expect(outlineLayout.linkScrollWidth).toBeGreaterThan(
+      outlineLayout.linkClientWidth,
     );
     expect(outlineLayout.canvasTransitionProperty).toContain(
       'grid-template-columns',

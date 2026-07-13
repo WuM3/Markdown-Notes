@@ -51,14 +51,14 @@ export function buildCrepeOptions(
           const functionGroup = builder.getGroup('function');
           functionGroup
             .clear()
-            .addItem('link', toolbarItem('链接', '[]', (ctx) => {
+            .addItem('link', toolbarItem('链接', LINK_ICON, (ctx) => {
               ctx.get(commandsCtx).call(toggleLinkCommand.key);
               focusEditor(ctx);
             }))
-            .addItem('quote', toolbarItem('引用', '"', (ctx) => {
+            .addItem('quote', toolbarItem('引用', QUOTE_ICON, (ctx) => {
               toggleBlockquote(ctx);
             }))
-            .addItem('code-block', toolbarItem('代码块', '{}', (ctx) => {
+            .addItem('code-block', toolbarItem('代码块', CODE_BLOCK_ICON, (ctx) => {
               applyCodeBlock(ctx);
             }))
             .addItem('text-color', dropdownItem('颜色', 'A'));
@@ -130,12 +130,28 @@ function toolbarItem(
   onRun: (ctx: Ctx) => void,
 ) {
   return {
-    icon: `<span class="toolbar-symbol-icon" aria-hidden="true">${icon}</span>`,
+    icon,
     active: () => false,
     onRun,
     label,
   };
 }
+
+function lucideIcon(content: string): string {
+  return `<svg class="toolbar-lucide-icon" aria-hidden="true" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">${content}</svg>`;
+}
+
+const LINK_ICON = lucideIcon(
+  '<path d="M9 17H7A5 5 0 0 1 7 7h2"></path><path d="M15 7h2a5 5 0 1 1 0 10h-2"></path><line x1="8" x2="16" y1="12" y2="12"></line>',
+);
+
+const QUOTE_ICON = lucideIcon(
+  '<path d="M16 3a2 2 0 0 0-2 2v6a2 2 0 0 0 2 2 1 1 0 0 1 1 1v1a2 2 0 0 1-2 2 1 1 0 0 0-1 1v2a1 1 0 0 0 1 1 6 6 0 0 0 6-6V5a2 2 0 0 0-2-2z"></path><path d="M5 3a2 2 0 0 0-2 2v6a2 2 0 0 0 2 2 1 1 0 0 1 1 1v1a2 2 0 0 1-2 2 1 1 0 0 0-1 1v2a1 1 0 0 0 1 1 6 6 0 0 0 6-6V5a2 2 0 0 0-2-2z"></path>',
+);
+
+const CODE_BLOCK_ICON = lucideIcon(
+  '<path d="m18 16 4-4-4-4"></path><path d="m6 8-4 4 4 4"></path><path d="m14.5 4-5 16"></path>',
+);
 
 function focusEditor(ctx: Ctx): void {
   ctx.get(editorViewCtx).focus();

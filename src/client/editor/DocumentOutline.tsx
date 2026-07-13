@@ -1,4 +1,11 @@
-import { useState, type CSSProperties, type WheelEvent } from 'react';
+import {
+  useEffect,
+  useLayoutEffect,
+  useRef,
+  useState,
+  type CSSProperties,
+  type WheelEvent,
+} from 'react';
 import { ChevronDown, ChevronLeft, ChevronRight, X } from 'lucide-react';
 import type { OutlineNode } from './document-outline.js';
 
@@ -130,6 +137,38 @@ function OutlineItem({
   const hasChildren = node.children.length > 0;
   const isCollapsed = collapsed.has(node.id);
   const isActive = activeId === node.id;
+  const titleRef = useRef<HTMLButtonElement>(null);
+  const [isTruncated, setIsTruncated] = useState(false);
+  const [canHover, setCanHover] = useState(false);
+
+  useEffect(() => {
+    if (typeof window.matchMedia !== 'function') return;
+    const media = window.matchMedia('(hover: hover) and (pointer: fine)');
+    const update = () => {
+      setCanHover(media.matches);
+    };
+    update();
+    media.addEventListener?.('change', update);
+    return () => media.removeEventListener?.('change', update);
+  }, []);
+
+  useLayoutEffect(() => {
+    const element = titleRef.current;
+    if (!element) return;
+
+    const update = () => {
+      setIsTruncated(element.scrollWidth > element.clientWidth);
+    };
+    update();
+    if (typeof ResizeObserver === 'undefined') {
+      window.addEventListener('resize', update);
+      return () => window.removeEventListener('resize', update);
+    }
+
+    const observer = new ResizeObserver(update);
+    observer.observe(element);
+    return () => observer.disconnect();
+  }, [node.title]);
 
   return (
     <div className="document-outline-item">
@@ -150,11 +189,13 @@ function OutlineItem({
           <span className="document-outline-spacer" />
         )}
         <button
+          ref={titleRef}
           type="button"
           className="document-outline-link"
           data-level={node.level}
           data-root={root ? 'true' : undefined}
           aria-current={isActive ? 'true' : undefined}
+          data-tooltip={canHover && isTruncated ? node.title : undefined}
           onClick={() => onNavigate(node.index)}
         >
           {node.title}
